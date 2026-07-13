@@ -106,17 +106,19 @@ async def _transcribe_via_api(audio_path: str) -> str:
         mime_type = "audio/mpeg"
 
         with open(target_path, "rb") as f:
-            files = {
-                "file": (filename, f, mime_type)
-            }
-            data = {
-                "model": config.AUDIO_MODEL
-            }
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, headers=headers, files=files, data=data, timeout=300.0)
-                response.raise_for_status()
-                result = response.json()
-                return result["text"].strip()
+            file_content = f.read()
+
+        files = {
+            "file": (filename, file_content, mime_type)
+        }
+        data = {
+            "model": config.AUDIO_MODEL
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, files=files, data=data, timeout=300.0)
+            response.raise_for_status()
+            result = response.json()
+            return result["text"].strip()
 
 
 def _transcribe_sync(audio_path: str) -> str:
