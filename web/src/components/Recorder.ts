@@ -7,7 +7,7 @@ export interface RecorderHandle {
 
 export async function startRecording(): Promise<RecorderHandle> {
   if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error('当前环境无法录音:需要 HTTPS(Tailscale 地址)访问')
+    throw new Error('当前环境无法录音：录音功能需要使用 HTTPS 或 localhost 安全上下文访问')
   }
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
   // Safari 产出 audio/mp4,Chrome 产出 audio/webm;后端 ffmpeg 都能解

@@ -1,5 +1,5 @@
 #!/bin/bash
-# 乱写APP 启动脚本:自动续期 Tailscale 证书(如可用)并以 HTTPS 启动;否则退回 HTTP。
+# 乱写APP 启动脚本:以 HTTP 模式启动后端服务。
 set -e
 cd "$(dirname "$0")/.."
 
@@ -21,34 +21,6 @@ if [ -z "$UV" ]; then
 fi
 
 PORT="${PORT:-8787}"
-CERT_DIR="data/certs"
-mkdir -p "$CERT_DIR"
-
-# 动态查找 Tailscale
-TS=""
-if [ -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ]; then
-  TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
-else
-  TS="$(command -v tailscale || true)"
-fi
-
-# 动态查找 Python3 解释器
-PYTHON_CMD="python3"
-if ! command -v python3 >/dev/null 2>&1; then
-  if command -v python >/dev/null 2>&1; then
-    PYTHON_CMD="python"
-  fi
-fi
-
-if [ -n "$TS" ] && "$TS" status >/dev/null 2>&1; then
-  # MagicDNS 主机名,如 mymac.tailxxxx.ts.net
-  HOST=$("$TS" status --json | "$PYTHON_CMD" -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')
-  if "$TS" cert --cert-file "$CERT_DIR/cert.pem" --key-file "$CERT_DIR/key.pem" "$HOST" 2>/dev/null; then
-    echo "HTTPS 模式: https://$HOST:$PORT"
-    exec "$UV" run uvicorn server.main:app --host 0.0.0.0 --port "$PORT" \
-      --ssl-certfile "$CERT_DIR/cert.pem" --ssl-keyfile "$CERT_DIR/key.pem"
-  fi
-fi
 
 # 动态获取局域网 IP
 get_local_ip() {
@@ -66,5 +38,5 @@ get_local_ip() {
 
 LOCAL_IP=$(get_local_ip)
 
-echo "未检测到 Tailscale,HTTP 模式(手机端录音功能不可用): http://$LOCAL_IP:$PORT"
+echo "乱写APP 启动中: http://$LOCAL_IP:$PORT"
 exec "$UV" run uvicorn server.main:app --host 0.0.0.0 --port "$PORT"
