@@ -206,7 +206,7 @@ def _call_openai(*, model: str, system: list | str, content, schema: type[T],
         if json_data is None:
             last_err = ValueError(
                 f"模型未返回预期的 tool_call 函数调用，且正文中未包含有效 JSON。\n"
-                f"模型返回正文内容如下:\n{message.content}"
+                f"模型返回的完整 Message 对象为:\n{repr(message)}"
             )
             continue
 
