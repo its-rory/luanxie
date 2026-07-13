@@ -19,8 +19,15 @@ _clients_lock = threading.Lock()
 
 
 def get_client(provider: str, api_key: str | None = None, base_url: str | None = None):
-    provider = provider.lower()
-    if provider == "openai":
+    provider_lower = provider.lower()
+    url_lower = (base_url or "").lower()
+
+    if "anthropic" in provider_lower or "anthropic" in url_lower:
+        resolved_type = "anthropic"
+    else:
+        resolved_type = "openai"
+
+    if resolved_type == "openai":
         resolved_key = api_key or config.OPENAI_API_KEY or None
         resolved_url = base_url or config.OPENAI_BASE_URL or None
         cache_key = ("openai", resolved_key, resolved_url)
@@ -32,7 +39,7 @@ def get_client(provider: str, api_key: str | None = None, base_url: str | None =
                     base_url=resolved_url
                 )
             return _clients[cache_key]
-    elif provider == "anthropic":
+    elif resolved_type == "anthropic":
         resolved_key = api_key or config.ANTHROPIC_API_KEY or None
         resolved_url = base_url or config.ANTHROPIC_BASE_URL or None
         cache_key = ("anthropic", resolved_key, resolved_url)
@@ -311,9 +318,15 @@ def call_structured(*, model: str, system: list | str, content, schema: type[T],
             resolved_provider = "openai"
 
     resolved_provider = resolved_provider.lower()
+    url_lower = (base_url or "").lower()
+    if "anthropic" in resolved_provider or "anthropic" in url_lower:
+        client_type = "anthropic"
+    else:
+        client_type = "openai"
+
     client = get_client(resolved_provider, api_key=api_key, base_url=base_url)
 
-    if resolved_provider == "openai":
+    if client_type == "openai":
         return _call_openai(
             client=client, model=model, system=system, content=content, schema=schema,
             tool_name=tool_name, tool_description=tool_description, max_tokens=max_tokens

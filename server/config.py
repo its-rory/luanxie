@@ -25,20 +25,37 @@ TRANSCRIPTION_API_KEY = os.getenv("TRANSCRIPTION_API_KEY", "")
 TRANSCRIPTION_BASE_URL = os.getenv("TRANSCRIPTION_BASE_URL", "https://api.openai.com/v1")
 TRANSCRIPTION_MODEL = os.getenv("TRANSCRIPTION_MODEL", "whisper-1")
 
-CLASSIFY_MODEL = os.getenv("CLASSIFY_MODEL", "claude-haiku-4-5")
-CLASSIFY_PROVIDER = os.getenv("CLASSIFY_PROVIDER", "")
-CLASSIFY_API_KEY = os.getenv("CLASSIFY_API_KEY", "")
-CLASSIFY_BASE_URL = os.getenv("CLASSIFY_BASE_URL", "")
+# =====================================================================
+# 1. 文字分类 (Text) 配置
+# =====================================================================
+TEXT_PROVIDER_NAME = os.getenv("TEXT_PROVIDER_NAME", "")
+TEXT_API_KEY = os.getenv("TEXT_API_KEY", "") or os.getenv("CLASSIFY_API_KEY", "") or os.getenv("OPENAI_API_KEY", "") or os.getenv("ANTHROPIC_API_KEY", "")
+TEXT_BASE_URL = os.getenv("TEXT_BASE_URL", "") or os.getenv("CLASSIFY_BASE_URL", "") or os.getenv("OPENAI_BASE_URL", "") or os.getenv("ANTHROPIC_BASE_URL", "")
+TEXT_MODEL = os.getenv("TEXT_MODEL", "") or os.getenv("CLASSIFY_MODEL", "claude-haiku-4-5")
 
-VISION_MODEL = os.getenv("VISION_MODEL", "")
-VISION_PROVIDER = os.getenv("VISION_PROVIDER", "")
-VISION_API_KEY = os.getenv("VISION_API_KEY", "")
-VISION_BASE_URL = os.getenv("VISION_BASE_URL", "")
+# =====================================================================
+# 2. 图像分类 (Image) 配置
+# =====================================================================
+IMAGE_PROVIDER_NAME = os.getenv("IMAGE_PROVIDER_NAME", "")
+IMAGE_API_KEY = os.getenv("IMAGE_API_KEY", "") or os.getenv("VISION_API_KEY", "") or os.getenv("OPENAI_API_KEY", "") or os.getenv("ANTHROPIC_API_KEY", "")
+IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "") or os.getenv("VISION_BASE_URL", "") or os.getenv("OPENAI_BASE_URL", "") or os.getenv("ANTHROPIC_BASE_URL", "")
+IMAGE_MODEL = os.getenv("IMAGE_MODEL", "") or os.getenv("VISION_MODEL", "")
 
-MERGE_MODEL = os.getenv("MERGE_MODEL", "claude-opus-4-8")
-MERGE_PROVIDER = os.getenv("MERGE_PROVIDER", "")
-MERGE_API_KEY = os.getenv("MERGE_API_KEY", "")
-MERGE_BASE_URL = os.getenv("MERGE_BASE_URL", "")
+# =====================================================================
+# 3. 语音转文字 (Audio) 配置
+# =====================================================================
+AUDIO_PROVIDER_NAME = os.getenv("AUDIO_PROVIDER_NAME", "")
+AUDIO_API_KEY = os.getenv("AUDIO_API_KEY", "") or os.getenv("TRANSCRIPTION_API_KEY", "")
+AUDIO_BASE_URL = os.getenv("AUDIO_BASE_URL", "") or os.getenv("TRANSCRIPTION_BASE_URL", "https://api.openai.com/v1")
+AUDIO_MODEL = os.getenv("AUDIO_MODEL", "") or os.getenv("TRANSCRIPTION_MODEL", "whisper-1")
+
+# =====================================================================
+# 4. 笔记合并 (Merge) 配置
+# =====================================================================
+MERGE_PROVIDER_NAME = os.getenv("MERGE_PROVIDER_NAME", "")
+MERGE_API_KEY = os.getenv("MERGE_API_KEY", "") or os.getenv("OPENAI_API_KEY", "") or os.getenv("ANTHROPIC_API_KEY", "")
+MERGE_BASE_URL = os.getenv("MERGE_BASE_URL", "") or os.getenv("OPENAI_BASE_URL", "") or os.getenv("ANTHROPIC_BASE_URL", "")
+MERGE_MODEL = os.getenv("MERGE_MODEL", "") or os.getenv("MERGE_MODEL", "claude-opus-4-8")
 
 # 置信度阈值:达到该级别及以上的分类结果自动合并,低于则进 awaiting_review。
 # 可选 high / medium / low;设为 low 即全自动。

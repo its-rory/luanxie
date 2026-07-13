@@ -42,10 +42,10 @@ def _image_block(media_path: str) -> dict:
 
 def classify(capture: dict) -> tuple[TopicDecision, dict]:
     """返回 (决策, token用量)。文本输入用 raw_text/transcript,图片直接传图。"""
-    model = config.CLASSIFY_MODEL
-    provider = config.CLASSIFY_PROVIDER
-    api_key = config.CLASSIFY_API_KEY
-    base_url = config.CLASSIFY_BASE_URL
+    model = config.TEXT_MODEL
+    provider = config.TEXT_PROVIDER_NAME
+    api_key = config.TEXT_API_KEY
+    base_url = config.TEXT_BASE_URL
 
     if capture["type"] == "image":
         query_text = ""
@@ -53,11 +53,11 @@ def classify(capture: dict) -> tuple[TopicDecision, dict]:
             _image_block(capture["media_path"]),
             {"type": "text", "text": prompts.CLASSIFY_IMAGE_INSTRUCTION},
         ]
-        if config.VISION_MODEL:
-            model = config.VISION_MODEL
-            provider = config.VISION_PROVIDER or provider
-            api_key = config.VISION_API_KEY or api_key
-            base_url = config.VISION_BASE_URL or base_url
+        if config.IMAGE_MODEL:
+            model = config.IMAGE_MODEL
+            provider = config.IMAGE_PROVIDER_NAME or provider
+            api_key = config.IMAGE_API_KEY or api_key
+            base_url = config.IMAGE_BASE_URL or base_url
     else:
         query_text = capture["transcript"] or capture["raw_text"] or ""
         content = prompts.classify_user_text(query_text)

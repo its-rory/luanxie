@@ -51,16 +51,16 @@ async def _transcribe_via_api(audio_path: str) -> str:
 
     # 检查是否为专属语音识别 (STT) 专用模型 (如 Whisper, SenseVoice, FunASR)
     # 这类模型必须使用 /v1/audio/transcriptions 接口；其他多模态对话模型则走 /v1/chat/completions
-    model_lower = config.TRANSCRIPTION_MODEL.lower()
+    model_lower = config.AUDIO_MODEL.lower()
     is_stt_model = any(k in model_lower for k in ["whisper", "sensevoice", "funasr"])
 
     filename = os.path.basename(target_path)
 
     if not is_stt_model:
         # 走 /v1/chat/completions 接口
-        url = f"{config.TRANSCRIPTION_BASE_URL.rstrip('/')}/chat/completions"
+        url = f"{config.AUDIO_BASE_URL.rstrip('/')}/chat/completions"
         headers = {
-            "Authorization": f"Bearer {config.TRANSCRIPTION_API_KEY}",
+            "Authorization": f"Bearer {config.AUDIO_API_KEY}",
             "Content-Type": "application/json"
         }
 
@@ -69,7 +69,7 @@ async def _transcribe_via_api(audio_path: str) -> str:
             audio_base64 = base64.b64encode(f.read()).decode("utf-8")
 
         payload = {
-            "model": config.TRANSCRIPTION_MODEL,
+            "model": config.AUDIO_MODEL,
             "messages": [
                 {
                     "role": "user",
@@ -97,9 +97,9 @@ async def _transcribe_via_api(audio_path: str) -> str:
 
     else:
         # 走标准的 /v1/audio/transcriptions 接口
-        url = f"{config.TRANSCRIPTION_BASE_URL.rstrip('/')}/audio/transcriptions"
+        url = f"{config.AUDIO_BASE_URL.rstrip('/')}/audio/transcriptions"
         headers = {
-            "Authorization": f"Bearer {config.TRANSCRIPTION_API_KEY}"
+            "Authorization": f"Bearer {config.AUDIO_API_KEY}"
         }
 
         # 确定 MIME 类型
@@ -110,7 +110,7 @@ async def _transcribe_via_api(audio_path: str) -> str:
                 "file": (filename, f, mime_type)
             }
             data = {
-                "model": config.TRANSCRIPTION_MODEL
+                "model": config.AUDIO_MODEL
             }
             async with httpx.AsyncClient() as client:
                 response = await client.post(url, headers=headers, files=files, data=data, timeout=300.0)
@@ -166,7 +166,7 @@ async def transcribe(media_path: str) -> str:
 
     try:
         # 如果配置了云端转写 API，优先使用 API，支持并发，不需要获取本地模型锁
-        if config.TRANSCRIPTION_API_KEY:
+        if config.AUDIO_API_KEY:
             return await _transcribe_via_api(path)
 
         async with _lock:  # 本地模型非线程安全, 串行执行

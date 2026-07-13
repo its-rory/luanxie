@@ -37,7 +37,7 @@ def merge(capture: dict, topic: dict) -> tuple[dict, dict]:
         schema=MergedNote,
         tool_name="submit_note",
         tool_description="提交合并后的完整主题笔记",
-        provider=config.MERGE_PROVIDER,
+        provider=config.MERGE_PROVIDER_NAME,
         api_key=config.MERGE_API_KEY,
         base_url=config.MERGE_BASE_URL,
     )
