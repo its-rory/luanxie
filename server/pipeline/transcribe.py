@@ -49,13 +49,14 @@ async def _transcribe_via_api(audio_path: str) -> str:
     target_path = await asyncio.to_thread(_ensure_mp3_format, audio_path)
     ext = "mp3"
 
-    # 检查是否为多模态 Chat 语音模型 (如 Qwen-Omni, GPT-4o, Audio 等)
+    # 检查是否为专属语音识别 (STT) 专用模型 (如 Whisper, SenseVoice, FunASR)
+    # 这类模型必须使用 /v1/audio/transcriptions 接口；其他多模态对话模型则走 /v1/chat/completions
     model_lower = config.TRANSCRIPTION_MODEL.lower()
-    is_chat_model = any(k in model_lower for k in ["omni", "audio", "instruct", "chat", "gpt-4o", "gemini"])
+    is_stt_model = any(k in model_lower for k in ["whisper", "sensevoice", "funasr"])
 
     filename = os.path.basename(target_path)
 
-    if is_chat_model:
+    if not is_stt_model:
         # 走 /v1/chat/completions 接口
         url = f"{config.TRANSCRIPTION_BASE_URL.rstrip('/')}/chat/completions"
         headers = {
