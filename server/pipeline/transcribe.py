@@ -11,37 +11,85 @@ _model_instance = None
 
 async def _transcribe_via_api(audio_path: str) -> str:
     import httpx
-    url = f"{config.TRANSCRIPTION_BASE_URL.rstrip('/')}/audio/transcriptions"
-    headers = {
-        "Authorization": f"Bearer {config.TRANSCRIPTION_API_KEY}"
-    }
+    import base64
 
-    # 获取文件名
+    # 检查是否为多模态 Chat 语音模型 (如 Qwen-Omni, GPT-4o, Audio 等)
+    model_lower = config.TRANSCRIPTION_MODEL.lower()
+    is_chat_model = any(k in model_lower for k in ["omni", "audio", "instruct", "chat", "gpt-4o", "gemini"])
+
     filename = os.path.basename(audio_path)
+    ext = os.path.splitext(filename)[1].lower().lstrip(".")
+    if ext == "wave":
+        ext = "wav"
 
-    # 确定 MIME 类型 (简单根据后缀判断)
-    ext = os.path.splitext(filename)[1].lower()
-    mime_type = "audio/mpeg"
-    if ext in (".wav", ".wave"):
-        mime_type = "audio/wav"
-    elif ext == ".ogg":
-        mime_type = "audio/ogg"
-    elif ext == ".m4a":
-        mime_type = "audio/m4a"
+    if is_chat_model:
+        # 走 /v1/chat/completions 接口
+        url = f"{config.TRANSCRIPTION_BASE_URL.rstrip('/')}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {config.TRANSCRIPTION_API_KEY}",
+            "Content-Type": "application/json"
+        }
 
-    with open(audio_path, "rb") as f:
-        files = {
-            "file": (filename, f, mime_type)
+        # 读取音频并转为 base64
+        with open(audio_path, "rb") as f:
+            audio_base64 = base64.b64encode(f.read()).decode("utf-8")
+
+        payload = {
+            "model": config.TRANSCRIPTION_MODEL,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": audio_base64,
+                                "format": ext or "mp3"
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": "Please transcribe this audio strictly word-for-word, only return the transcription text, do not add any explanation, translation, or notes."
+                        }
+                    ]
+                }
+            ]
         }
-        data = {
-            "model": config.TRANSCRIPTION_MODEL
-        }
+
         async with httpx.AsyncClient() as client:
-            # 60秒超时，API 响应通常较快
-            response = await client.post(url, headers=headers, files=files, data=data, timeout=60.0)
+            response = await client.post(url, headers=headers, json=payload, timeout=60.0)
             response.raise_for_status()
             result = response.json()
-            return result["text"].strip()
+            return result["choices"][0]["message"]["content"].strip()
+
+    else:
+        # 走标准的 /v1/audio/transcriptions 接口
+        url = f"{config.TRANSCRIPTION_BASE_URL.rstrip('/')}/audio/transcriptions"
+        headers = {
+            "Authorization": f"Bearer {config.TRANSCRIPTION_API_KEY}"
+        }
+
+        # 确定 MIME 类型
+        mime_type = "audio/mpeg"
+        if ext == "wav":
+            mime_type = "audio/wav"
+        elif ext == "ogg":
+            mime_type = "audio/ogg"
+        elif ext == "m4a":
+            mime_type = "audio/m4a"
+
+        with open(audio_path, "rb") as f:
+            files = {
+                "file": (filename, f, mime_type)
+            }
+            data = {
+                "model": config.TRANSCRIPTION_MODEL
+            }
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=headers, files=files, data=data, timeout=60.0)
+                response.raise_for_status()
+                result = response.json()
+                return result["text"].strip()
 
 
 def _transcribe_sync(audio_path: str) -> str:
