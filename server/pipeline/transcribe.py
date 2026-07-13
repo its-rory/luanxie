@@ -41,10 +41,9 @@ async def _transcribe_via_api(audio_path: str) -> str:
                     "role": "user",
                     "content": [
                         {
-                            "type": "input_audio",
-                            "input_audio": {
-                                "data": audio_base64,
-                                "format": ext or "mp3"
+                            "type": "audio_url",
+                            "audio_url": {
+                                "url": f"data:audio/{ext or 'mp3'};base64,{audio_base64}"
                             }
                         },
                         {
