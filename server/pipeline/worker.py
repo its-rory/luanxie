@@ -17,7 +17,7 @@ from . import transcribe as transcribe_mod
 _queue: asyncio.Queue[str] = asyncio.Queue()
 
 MAX_RETRIES = 3
-CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
+CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2, "never": 99}
 
 
 async def enqueue(capture_id: str) -> None:
@@ -97,12 +97,16 @@ async def _process(capture_id: str) -> None:
     try:
         cap = await _transcribe_stage(cap)
         cap, decision = await _classify_stage(cap)
-        threshold = CONFIDENCE_RANK.get(config.AUTO_MERGE_CONFIDENCE, 2)
-        if CONFIDENCE_RANK[decision.confidence] >= threshold:
+        threshold_key = "AUTO_MERGE_EXISTING_CONFIDENCE" if decision.action == "existing" else "AUTO_MERGE_NEW_CONFIDENCE"
+        threshold_str = getattr(config, threshold_key, "high")
+        threshold = CONFIDENCE_RANK.get(threshold_str, 2)
+        decision_rank = CONFIDENCE_RANK.get(decision.confidence, 0)
+        
+        if decision_rank >= threshold:
             await run_merge(cap["id"], decision)
         else:
             _set_status(cap["id"], "awaiting_review")
-            db.log(cap["id"], "review", "start", "置信度不足,等待用户确认")
+            db.log(cap["id"], "review", "start", f"置信度不足 ({decision.confidence} < {threshold_str}), 等待用户确认")
     except Exception as e:
         import anthropic
         import openai

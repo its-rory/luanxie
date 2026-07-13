@@ -42,7 +42,8 @@ def health():
             for lib in ["mlx_whisper", "faster_whisper", "whisper"]
         ),
         "api_key_set": has_keys,
-        "auto_merge_confidence": config.AUTO_MERGE_CONFIDENCE,
+        "auto_merge_existing_confidence": config.AUTO_MERGE_EXISTING_CONFIDENCE,
+        "auto_merge_new_confidence": config.AUTO_MERGE_NEW_CONFIDENCE,
     }
 
 

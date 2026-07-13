@@ -27,6 +27,9 @@ class SettingsUpdate(BaseModel):
     MERGE_BASE_URL: str
     MERGE_MODEL: str
 
+    AUTO_MERGE_EXISTING_CONFIDENCE: str = "medium"
+    AUTO_MERGE_NEW_CONFIDENCE: str = "high"
+
 class TestRequest(BaseModel):
     task: str  # text, image, audio, merge
     provider: str
@@ -130,6 +133,7 @@ def get_settings():
         "IMAGE_PROVIDER_NAME", "IMAGE_API_KEY", "IMAGE_BASE_URL", "IMAGE_MODEL",
         "AUDIO_PROVIDER_NAME", "AUDIO_API_KEY", "AUDIO_BASE_URL", "AUDIO_MODEL",
         "MERGE_PROVIDER_NAME", "MERGE_API_KEY", "MERGE_BASE_URL", "MERGE_MODEL",
+        "AUTO_MERGE_EXISTING_CONFIDENCE", "AUTO_MERGE_NEW_CONFIDENCE",
     ]
     result = {}
     for k in keys:

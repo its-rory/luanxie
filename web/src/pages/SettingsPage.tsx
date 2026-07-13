@@ -22,6 +22,9 @@ interface SettingsState {
   MERGE_API_KEY: string
   MERGE_BASE_URL: string
   MERGE_MODEL: string
+
+  AUTO_MERGE_EXISTING_CONFIDENCE: string
+  AUTO_MERGE_NEW_CONFIDENCE: string
 }
 
 export default function SettingsPage({ showToast, onLogout }: { showToast: (m: string) => void; onLogout: () => void }) {
@@ -48,6 +51,8 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     MERGE_API_KEY: '',
     MERGE_BASE_URL: '',
     MERGE_MODEL: '',
+    AUTO_MERGE_EXISTING_CONFIDENCE: 'medium',
+    AUTO_MERGE_NEW_CONFIDENCE: 'high',
   })
 
   // Test states for each of the 4 sections: 'idle' | 'testing' | 'success' | 'error'
@@ -87,6 +92,8 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
         MERGE_API_KEY: data.MERGE_API_KEY || '',
         MERGE_BASE_URL: data.MERGE_BASE_URL || '',
         MERGE_MODEL: data.MERGE_MODEL || '',
+        AUTO_MERGE_EXISTING_CONFIDENCE: data.AUTO_MERGE_EXISTING_CONFIDENCE || 'medium',
+        AUTO_MERGE_NEW_CONFIDENCE: data.AUTO_MERGE_NEW_CONFIDENCE || 'high',
       })
       // Reset test states
       setTestStates({
@@ -202,9 +209,15 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
             </span>
           </div>
           <div className="kv">
-            <span className="k">自动合并门槛</span>
+            <span className="k">归类至已有主题门槛</span>
             <span className="v">
-              {{ high: '高置信才自动', medium: '中等以上自动', low: '全自动' }[health.auto_merge_confidence] || health.auto_merge_confidence}
+              {{ low: '全自动', medium: '中置信及以上', high: '高置信才自动', never: '从不自动' }[health.auto_merge_existing_confidence] || health.auto_merge_existing_confidence}
+            </span>
+          </div>
+          <div className="kv">
+            <span className="k">归类为全新主题门槛</span>
+            <span className="v">
+              {{ low: '全自动', medium: '中置信及以上', high: '高置信才自动', never: '从不自动' }[health.auto_merge_new_confidence] || health.auto_merge_new_confidence}
             </span>
           </div>
           <div className="kv" style={{ borderBottom: 'none' }}>
@@ -432,13 +445,48 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                   </div>
                 </div>
 
+                {/* 5. 自动合并门槛精细化管理 */}
+                <div style={{ border: '1px solid var(--line)', borderRadius: '10px', padding: '12px', background: 'var(--paper-deep)' }}>
+                  <div style={{ fontFamily: 'var(--serif)', fontWeight: 'bold', fontSize: '15px', color: 'var(--ink)', marginBottom: '10px' }}>
+                    自动合并门槛精细化管理
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div>
+                      <label style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>归档至已有主题门槛</label>
+                      <select 
+                        value={settings.AUTO_MERGE_EXISTING_CONFIDENCE}
+                        onChange={e => handleInputChange('AUTO_MERGE_EXISTING_CONFIDENCE', e.target.value)}
+                        style={{ ...inputStyle, padding: '4px 6px', height: '30px' }}
+                      >
+                        <option value="low">全自动 (全部合并)</option>
+                        <option value="medium">中置信及以上 (推荐)</option>
+                        <option value="high">高置信才自动</option>
+                        <option value="never">从不自动 (总是进入待确认)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>归档为全新主题门槛</label>
+                      <select 
+                        value={settings.AUTO_MERGE_NEW_CONFIDENCE}
+                        onChange={e => handleInputChange('AUTO_MERGE_NEW_CONFIDENCE', e.target.value)}
+                        style={{ ...inputStyle, padding: '4px 6px', height: '30px' }}
+                      >
+                        <option value="low">全自动 (全部合并)</option>
+                        <option value="medium">中置信及以上</option>
+                        <option value="high">高置信才自动 (推荐)</option>
+                        <option value="never">从不自动 (总是进入待确认)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
               </div>
 
               {/* Action Buttons */}
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', borderTop: '1px solid var(--line)', paddingTop: '14px' }}>
                 <button type="button" className="btn ghost" disabled={saving} onClick={() => setShowModal(false)}>取消</button>
                 <button type="submit" className="btn primary" disabled={saving}>
-                  {saving ? '测试并保存中…' : '验证并保存'}
+                  {saving ? '保存中…' : '保存'}
                 </button>
               </div>
             </form>

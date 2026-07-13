@@ -17,6 +17,14 @@ AUTO_MERGE_CONFIDENCE = os.getenv("AUTO_MERGE_CONFIDENCE", "high")
 if AUTO_MERGE_CONFIDENCE not in ("high", "medium", "low"):
     AUTO_MERGE_CONFIDENCE = "high"
 
+AUTO_MERGE_EXISTING_CONFIDENCE = os.getenv("AUTO_MERGE_EXISTING_CONFIDENCE") or os.getenv("AUTO_MERGE_CONFIDENCE") or "medium"
+if AUTO_MERGE_EXISTING_CONFIDENCE not in ("high", "medium", "low", "never"):
+    AUTO_MERGE_EXISTING_CONFIDENCE = "medium"
+
+AUTO_MERGE_NEW_CONFIDENCE = os.getenv("AUTO_MERGE_NEW_CONFIDENCE") or os.getenv("AUTO_MERGE_CONFIDENCE") or "high"
+if AUTO_MERGE_NEW_CONFIDENCE not in ("high", "medium", "low", "never"):
+    AUTO_MERGE_NEW_CONFIDENCE = "high"
+
 # 主题数少于该值时全量清单进 prompt,否则用 FTS5 预筛
 TOPIC_LIST_FULL_LIMIT = 150
 
@@ -26,6 +34,8 @@ PORT = int(os.getenv("PORT", "8787"))
 # 静态默认配置
 _STATIC_DEFAULTS = {
     "ADMIN_PASSWORD": "admin",
+    "AUTO_MERGE_EXISTING_CONFIDENCE": "medium",
+    "AUTO_MERGE_NEW_CONFIDENCE": "high",
     "LLM_PROVIDER": "",
     "ANTHROPIC_API_KEY": "",
     "ANTHROPIC_BASE_URL": "",
