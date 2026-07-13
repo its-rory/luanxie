@@ -12,7 +12,13 @@ MEDIA_DIR = DATA_DIR / "media"
 DB_PATH = DATA_DIR / "luanxie.db"
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
 
+# LLM 接口服务配置 (支持 Anthropic 和 OpenAI 双协议)
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").lower()  # anthropic 或 openai
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "")
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")
 
 # 语音转文字 API 配置 (如使用云端转写)
 TRANSCRIPTION_API_KEY = os.getenv("TRANSCRIPTION_API_KEY", "")
