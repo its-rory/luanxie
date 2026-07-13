@@ -109,7 +109,7 @@ export default function CapturePage({ onDone, showToast }: {
             <span className="ideo">言</span>
             <span>
               <div className="label">{recording ? `录音中 ${elapsed}s · 点击结束` : '说一段'}</div>
-              <div className="desc">{recording ? '再点一下就收进去' : '本地 Whisper 转写,不改你的原话'}</div>
+              <div className="desc">{recording ? '再点一下就收进去' : 'AI大模型转写，不改你的原话'}</div>
             </span>
           </button>
           <button className="capture-card" disabled={busy} onClick={() => setMode('text')}>
