@@ -142,31 +142,6 @@ def get_settings():
 
 @router.post("")
 async def save_settings(payload: SettingsUpdate):
-    # Resolve keys from placeholder
-    resolved_text_key = resolve_key(payload.TEXT_API_KEY, "TEXT_API_KEY")
-    resolved_image_key = resolve_key(payload.IMAGE_API_KEY, "IMAGE_API_KEY")
-    resolved_audio_key = resolve_key(payload.AUDIO_API_KEY, "AUDIO_API_KEY")
-    resolved_merge_key = resolve_key(payload.MERGE_API_KEY, "MERGE_API_KEY")
-
-    # Try testing all configurations first
-    tasks = ["text", "image", "audio", "merge"]
-    configs = [
-        (payload.TEXT_PROVIDER_NAME, resolved_text_key, payload.TEXT_BASE_URL, payload.TEXT_MODEL),
-        (payload.IMAGE_PROVIDER_NAME, resolved_image_key, payload.IMAGE_BASE_URL, payload.IMAGE_MODEL),
-        (payload.AUDIO_PROVIDER_NAME, resolved_audio_key, payload.AUDIO_BASE_URL, payload.AUDIO_MODEL),
-        (payload.MERGE_PROVIDER_NAME, resolved_merge_key, payload.MERGE_BASE_URL, payload.MERGE_MODEL),
-    ]
-
-    errors = {}
-    for task, (prov, key, url, model) in zip(tasks, configs):
-        if key or model:
-            err = await test_api_config(task, prov, key, url, model)
-            if err:
-                errors[task] = err
-
-    if errors:
-        raise HTTPException(400, detail={"message": "保存失败，部分 API 测试未通过", "errors": errors})
-
     # Save to SQLite
     data = payload.model_dump()
     for k, v in data.items():
