@@ -6,48 +6,39 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, db, exporter
+from . import config, db
 from .pipeline import worker
-from .routes import captures, events_route, export, review, topics
+from .routes import captures, events_route, review, settings, topics
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.get_conn()  # 建表
     consumer_task = asyncio.create_task(worker.consumer())
-    export_task = None
-    if config.EXPORT_INTERVAL_MINUTES > 0:
-        async def periodic_export():
-            while True:
-                await asyncio.sleep(config.EXPORT_INTERVAL_MINUTES * 60)
-                await asyncio.to_thread(exporter.export_all)
-        export_task = asyncio.create_task(periodic_export())
     yield
     consumer_task.cancel()
-    if export_task:
-        export_task.cancel()
 
 
 app = FastAPI(title="乱写", lifespan=lifespan)
 app.include_router(captures.router)
 app.include_router(topics.router)
 app.include_router(review.router)
-app.include_router(export.router)
+app.include_router(settings.router)
 app.include_router(events_route.router)
 
 
 @app.get("/api/health")
 def health():
     import importlib.util
+    has_keys = bool(config.TEXT_API_KEY) and bool(config.IMAGE_API_KEY) and bool(config.AUDIO_API_KEY) and bool(config.MERGE_API_KEY)
     return {
         "queue_depth": worker.queue_depth(),
         "db": str(config.DB_PATH),
-        "whisper_installed": bool(config.TRANSCRIPTION_API_KEY) or any(
+        "whisper_installed": bool(config.AUDIO_API_KEY) or any(
             importlib.util.find_spec(lib) is not None
             for lib in ["mlx_whisper", "faster_whisper", "whisper"]
         ),
-        "api_key_set": bool(config.ANTHROPIC_API_KEY),
-        "export_dir": str(config.VAULT_EXPORT_DIR),
+        "api_key_set": has_keys,
         "auto_merge_confidence": config.AUTO_MERGE_CONFIDENCE,
     }
 

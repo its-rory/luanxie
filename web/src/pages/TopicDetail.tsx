@@ -56,7 +56,7 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
       <div className="detail-head">
         <button className="back" onClick={back}>← 知识库</button>
         <h2>{topic.title}</h2>
-        <div className="v">v{topic.version} · 已导出到 v{topic.exported_version} · {new Date(topic.updated_at).toLocaleDateString('zh-CN')}</div>
+        <div className="v">v{topic.version} · {new Date(topic.updated_at).toLocaleDateString('zh-CN')}</div>
         <div className="tags">{topic.tags.map((t) => <span className="tag" key={t}>{t}</span>)}</div>
       </div>
 

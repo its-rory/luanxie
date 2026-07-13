@@ -61,6 +61,11 @@ CREATE VIRTUAL TABLE IF NOT EXISTS topics_fts USING fts5(
 
 CREATE INDEX IF NOT EXISTS idx_captures_status ON captures(status);
 CREATE INDEX IF NOT EXISTS idx_captures_created ON captures(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
 """
 
 import threading
@@ -279,18 +284,6 @@ def get_topic_version(topic_id: str, version: int) -> dict | None:
     return dict(row) if row else None
 
 
-def mark_exported(topic_id: str, version: int, filename: str) -> None:
-    conn = get_conn()
-    conn.execute(
-        "UPDATE topics SET exported_version=?, export_filename=? WHERE id=?",
-        (version, filename, topic_id))
-    conn.commit()
-
-
-def topics_to_export() -> list[dict]:
-    cur = get_conn().execute(
-        "SELECT * FROM topics WHERE version > exported_version")
-    return _rows(cur)
 
 
 def all_tags() -> list[str]:
@@ -343,3 +336,19 @@ def logs_for(capture_id: str) -> list[dict]:
     cur = get_conn().execute(
         "SELECT * FROM processing_log WHERE capture_id=? ORDER BY id", (capture_id,))
     return _rows(cur)
+
+
+# ---------- settings ----------
+
+def get_setting(key: str, default: str = "") -> str | None:
+    try:
+        row = get_conn().execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return row[0] if row else default
+    except sqlite3.OperationalError:
+        return default
+
+
+def set_setting(key: str, value: str) -> None:
+    conn = get_conn()
+    with conn:
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))

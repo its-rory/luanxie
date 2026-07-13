@@ -49,8 +49,20 @@ export const api = {
   rollback: (id: string, version: number) =>
     req<Topic>(`/api/topics/${id}/rollback/${version}`, { method: 'POST' }),
 
-  exportNow: () => req<{ exported: unknown[]; count: number }>('/api/export', { method: 'POST' }),
   health: () => req<Health>('/api/health'),
+  getSettings: () => req<Record<string, string>>('/api/settings'),
+  saveSettings: (body: Record<string, string>) =>
+    req<{ ok: boolean }>('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  testSettings: (body: { task: string; provider: string; api_key: string; base_url: string; model: string }) =>
+    req<{ ok: boolean; error?: string }>('/api/settings/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
 }
 
 export function subscribeEvents(onEvent: (data: Record<string, unknown>) => void): () => void {

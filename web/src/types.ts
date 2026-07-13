@@ -57,6 +57,5 @@ export interface Health {
   queue_depth: number
   whisper_installed: boolean
   api_key_set: boolean
-  export_dir: string
   auto_merge_confidence: string
 }
