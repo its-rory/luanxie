@@ -42,12 +42,15 @@ def _image_block(media_path: str) -> dict:
 
 def classify(capture: dict) -> tuple[TopicDecision, dict]:
     """返回 (决策, token用量)。文本输入用 raw_text/transcript,图片直接传图。"""
+    model = config.CLASSIFY_MODEL
     if capture["type"] == "image":
         query_text = ""
         content: list | str = [
             _image_block(capture["media_path"]),
             {"type": "text", "text": prompts.CLASSIFY_IMAGE_INSTRUCTION},
         ]
+        if config.VISION_MODEL:
+            model = config.VISION_MODEL
     else:
         query_text = capture["transcript"] or capture["raw_text"] or ""
         content = prompts.classify_user_text(query_text)
@@ -59,7 +62,7 @@ def classify(capture: dict) -> tuple[TopicDecision, dict]:
          "cache_control": {"type": "ephemeral"}},
     ]
     decision, usage = call_structured(
-        model=config.CLASSIFY_MODEL,
+        model=model,
         max_tokens=4096,
         system=system,
         content=content,

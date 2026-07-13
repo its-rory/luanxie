@@ -26,6 +26,7 @@ TRANSCRIPTION_BASE_URL = os.getenv("TRANSCRIPTION_BASE_URL", "https://api.openai
 TRANSCRIPTION_MODEL = os.getenv("TRANSCRIPTION_MODEL", "whisper-1")
 
 CLASSIFY_MODEL = os.getenv("CLASSIFY_MODEL", "claude-haiku-4-5")
+VISION_MODEL = os.getenv("VISION_MODEL", "")
 MERGE_MODEL = os.getenv("MERGE_MODEL", "claude-opus-4-8")
 
 # 置信度阈值:达到该级别及以上的分类结果自动合并,低于则进 awaiting_review。
