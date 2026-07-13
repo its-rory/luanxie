@@ -186,13 +186,32 @@ def _call_openai(*, model: str, system: list | str, content, schema: type[T],
         tool_calls = getattr(message, "tool_calls", None)
         tool_call = tool_calls[0] if tool_calls else None
 
-        if tool_call is None or tool_call.function.name != tool_name:
-            last_err = ValueError("模型未返回预期的 tool_call 函数调用")
+        json_data = None
+        if tool_call is not None and tool_call.function.name == tool_name:
+            try:
+                json_data = json.loads(tool_call.function.arguments)
+            except Exception as e:
+                last_err = e
+        elif message.content:
+            # 兜底：如果模型没有生成正式的 tool_call，但直接在正文中输出了 JSON 字符串，我们也尝试解析
+            text = message.content.strip()
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1:
+                try:
+                    json_data = json.loads(text[start:end+1])
+                except Exception as e:
+                    last_err = e
+
+        if json_data is None:
+            last_err = ValueError(
+                f"模型未返回预期的 tool_call 函数调用，且正文中未包含有效 JSON。\n"
+                f"模型返回正文内容如下:\n{message.content}"
+            )
             continue
 
         try:
-            input_data = json.loads(tool_call.function.arguments)
-            return schema.model_validate(input_data), usage
+            return schema.model_validate(json_data), usage
         except (ValidationError, json.JSONDecodeError) as e:
             last_err = e
             messages = messages + [
