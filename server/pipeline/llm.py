@@ -12,30 +12,40 @@ from .. import config
 
 T = TypeVar("T", bound=BaseModel)
 
-_anthropic_client = None
-_openai_client = None
+import threading
+
+_clients = {}
+_clients_lock = threading.Lock()
 
 
-def get_anthropic_client():
-    global _anthropic_client
-    if _anthropic_client is None:
-        import anthropic
-        _anthropic_client = anthropic.Anthropic(
-            api_key=config.ANTHROPIC_API_KEY or None,
-            base_url=config.ANTHROPIC_BASE_URL or None
-        )
-    return _anthropic_client
-
-
-def get_openai_client():
-    global _openai_client
-    if _openai_client is None:
-        import openai
-        _openai_client = openai.OpenAI(
-            api_key=config.OPENAI_API_KEY or None,
-            base_url=config.OPENAI_BASE_URL or None
-        )
-    return _openai_client
+def get_client(provider: str, api_key: str | None = None, base_url: str | None = None):
+    provider = provider.lower()
+    if provider == "openai":
+        resolved_key = api_key or config.OPENAI_API_KEY or None
+        resolved_url = base_url or config.OPENAI_BASE_URL or None
+        cache_key = ("openai", resolved_key, resolved_url)
+        with _clients_lock:
+            if cache_key not in _clients:
+                import openai
+                _clients[cache_key] = openai.OpenAI(
+                    api_key=resolved_key,
+                    base_url=resolved_url
+                )
+            return _clients[cache_key]
+    elif provider == "anthropic":
+        resolved_key = api_key or config.ANTHROPIC_API_KEY or None
+        resolved_url = base_url or config.ANTHROPIC_BASE_URL or None
+        cache_key = ("anthropic", resolved_key, resolved_url)
+        with _clients_lock:
+            if cache_key not in _clients:
+                import anthropic
+                _clients[cache_key] = anthropic.Anthropic(
+                    api_key=resolved_key,
+                    base_url=resolved_url
+                )
+            return _clients[cache_key]
+    else:
+        raise ValueError(f"Unsupported LLM provider: {provider}")
 
 
 def _flatten_system(system) -> str:
@@ -79,7 +89,7 @@ def _convert_content_to_openai(content):
     return content
 
 
-def _call_anthropic(*, model: str, system: list | str, content, schema: type[T],
+def _call_anthropic(*, client, model: str, system: list | str, content, schema: type[T],
                      tool_name: str, tool_description: str,
                      max_tokens: int = 4096) -> tuple[T, dict]:
     tool = {
@@ -90,7 +100,7 @@ def _call_anthropic(*, model: str, system: list | str, content, schema: type[T],
     messages = [{"role": "user", "content": content}]
     last_err: Exception | None = None
     for _ in range(2):
-        response = get_anthropic_client().messages.create(
+        response = client.messages.create(
             model=model,
             max_tokens=max_tokens,
             system=system,
@@ -121,7 +131,7 @@ def _call_anthropic(*, model: str, system: list | str, content, schema: type[T],
     raise last_err  # type: ignore[misc]
 
 
-def _call_openai(*, model: str, system: list | str, content, schema: type[T],
+def _call_openai(*, client, model: str, system: list | str, content, schema: type[T],
                   tool_name: str, tool_description: str,
                   max_tokens: int = 4096) -> tuple[T, dict]:
     system_text = _flatten_system(system)
@@ -145,7 +155,7 @@ def _call_openai(*, model: str, system: list | str, content, schema: type[T],
     last_err: Exception | None = None
     for _ in range(2):
         try:
-            response = get_openai_client().chat.completions.create(
+            response = client.chat.completions.create(
                 model=model,
                 max_tokens=max_tokens,
                 messages=messages,
@@ -157,7 +167,7 @@ def _call_openai(*, model: str, system: list | str, content, schema: type[T],
             if "tool_choice" in err_msg or "tool" in err_msg or "20015" in err_msg:
                 try:
                     # 尝试降级为 "required" (强制要求调用工具，但不由 API 指定具体函数名)
-                    response = get_openai_client().chat.completions.create(
+                    response = client.chat.completions.create(
                         model=model,
                         max_tokens=max_tokens,
                         messages=messages,
@@ -166,7 +176,7 @@ def _call_openai(*, model: str, system: list | str, content, schema: type[T],
                     )
                 except openai.BadRequestError:
                     # 进一步降级为 "auto" (自动决定，部分不支持 forced tool call 的模型适用)
-                    response = get_openai_client().chat.completions.create(
+                    response = client.chat.completions.create(
                         model=model,
                         max_tokens=max_tokens,
                         messages=messages,
@@ -284,19 +294,32 @@ def _call_openai(*, model: str, system: list | str, content, schema: type[T],
 
 def call_structured(*, model: str, system: list | str, content, schema: type[T],
                     tool_name: str, tool_description: str,
-                    max_tokens: int = 4096) -> tuple[T, dict]:
+                    max_tokens: int = 4096,
+                    provider: str | None = None,
+                    api_key: str | None = None,
+                    base_url: str | None = None) -> tuple[T, dict]:
     """强制模型调用一个'提交结果'工具,返回 (校验后的对象, 用量)。校验失败自动重试一次。"""
-    # 决定使用哪个 Provider
-    use_openai = (config.LLM_PROVIDER == "openai") or (
-        bool(config.OPENAI_API_KEY) and not bool(config.ANTHROPIC_API_KEY))
+    resolved_provider = provider
+    if not resolved_provider:
+        resolved_provider = config.LLM_PROVIDER
+    if not resolved_provider:
+        if api_key or config.OPENAI_API_KEY:
+            resolved_provider = "openai"
+        elif config.ANTHROPIC_API_KEY:
+            resolved_provider = "anthropic"
+        else:
+            resolved_provider = "openai"
 
-    if use_openai:
+    resolved_provider = resolved_provider.lower()
+    client = get_client(resolved_provider, api_key=api_key, base_url=base_url)
+
+    if resolved_provider == "openai":
         return _call_openai(
-            model=model, system=system, content=content, schema=schema,
+            client=client, model=model, system=system, content=content, schema=schema,
             tool_name=tool_name, tool_description=tool_description, max_tokens=max_tokens
         )
     else:
         return _call_anthropic(
-            model=model, system=system, content=content, schema=schema,
+            client=client, model=model, system=system, content=content, schema=schema,
             tool_name=tool_name, tool_description=tool_description, max_tokens=max_tokens
         )

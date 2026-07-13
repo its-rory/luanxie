@@ -26,8 +26,19 @@ TRANSCRIPTION_BASE_URL = os.getenv("TRANSCRIPTION_BASE_URL", "https://api.openai
 TRANSCRIPTION_MODEL = os.getenv("TRANSCRIPTION_MODEL", "whisper-1")
 
 CLASSIFY_MODEL = os.getenv("CLASSIFY_MODEL", "claude-haiku-4-5")
+CLASSIFY_PROVIDER = os.getenv("CLASSIFY_PROVIDER", "")
+CLASSIFY_API_KEY = os.getenv("CLASSIFY_API_KEY", "")
+CLASSIFY_BASE_URL = os.getenv("CLASSIFY_BASE_URL", "")
+
 VISION_MODEL = os.getenv("VISION_MODEL", "")
+VISION_PROVIDER = os.getenv("VISION_PROVIDER", "")
+VISION_API_KEY = os.getenv("VISION_API_KEY", "")
+VISION_BASE_URL = os.getenv("VISION_BASE_URL", "")
+
 MERGE_MODEL = os.getenv("MERGE_MODEL", "claude-opus-4-8")
+MERGE_PROVIDER = os.getenv("MERGE_PROVIDER", "")
+MERGE_API_KEY = os.getenv("MERGE_API_KEY", "")
+MERGE_BASE_URL = os.getenv("MERGE_BASE_URL", "")
 
 # 置信度阈值:达到该级别及以上的分类结果自动合并,低于则进 awaiting_review。
 # 可选 high / medium / low;设为 low 即全自动。

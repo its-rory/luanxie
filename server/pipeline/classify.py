@@ -43,6 +43,10 @@ def _image_block(media_path: str) -> dict:
 def classify(capture: dict) -> tuple[TopicDecision, dict]:
     """返回 (决策, token用量)。文本输入用 raw_text/transcript,图片直接传图。"""
     model = config.CLASSIFY_MODEL
+    provider = config.CLASSIFY_PROVIDER
+    api_key = config.CLASSIFY_API_KEY
+    base_url = config.CLASSIFY_BASE_URL
+
     if capture["type"] == "image":
         query_text = ""
         content: list | str = [
@@ -51,6 +55,9 @@ def classify(capture: dict) -> tuple[TopicDecision, dict]:
         ]
         if config.VISION_MODEL:
             model = config.VISION_MODEL
+            provider = config.VISION_PROVIDER or provider
+            api_key = config.VISION_API_KEY or api_key
+            base_url = config.VISION_BASE_URL or base_url
     else:
         query_text = capture["transcript"] or capture["raw_text"] or ""
         content = prompts.classify_user_text(query_text)
@@ -69,6 +76,9 @@ def classify(capture: dict) -> tuple[TopicDecision, dict]:
         schema=TopicDecision,
         tool_name="submit_decision",
         tool_description="提交净化后的文本与主题归属判断",
+        provider=provider,
+        api_key=api_key,
+        base_url=base_url,
     )
     # 防御:模型选了 existing 但 topic_id 不在库里 → 降级为新主题
     if decision.action == "existing":
