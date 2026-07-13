@@ -176,6 +176,19 @@ nav.tabs .badge {
   font-size: 11px; padding: 2px 8px; border-radius: 999px;
   border: 1px solid currentColor; font-weight: 500; white-space: nowrap;
 }
+button.status-badge {
+  background: none;
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.1s, opacity 0.1s;
+}
+button.status-badge:active {
+  transform: scale(0.95);
+  opacity: 0.8;
+}
+button.status-badge:hover {
+  opacity: 0.85;
+}
 .status-badge .dot { width: 6px; height: 6px; border-radius: 3px; background: currentColor; }
 .status-badge.working .dot { animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: 0.25; } }

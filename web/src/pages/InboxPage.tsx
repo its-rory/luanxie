@@ -20,6 +20,7 @@ export default function InboxPage({ tick, openTopic, showToast }: {
     try { await api.retry(id); showToast('已重新排队') } catch (e) { showToast((e as Error).message) }
   }
   const remove = async (id: string) => {
+    if (!confirm('确定要删除该条目吗？')) return
     try {
       await api.deleteCapture(id)
       setItems((xs) => xs.filter((x) => x.id !== id))
@@ -47,13 +48,13 @@ export default function InboxPage({ tick, openTopic, showToast }: {
               </>
             )}
             <span>{new Date(c.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+            <button className="status-badge st-failed" style={{ marginLeft: 'auto' }} onClick={() => remove(c.id)}>删除</button>
           </div>
           {c.status === 'failed' && (
             <>
               <div className="err">{c.error}</div>
               <div className="row">
                 <button className="btn small" onClick={() => retry(c.id)}>重试</button>
-                <button className="btn small danger" onClick={() => remove(c.id)}>删除</button>
               </div>
             </>
           )}

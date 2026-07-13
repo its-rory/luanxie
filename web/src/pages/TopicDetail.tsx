@@ -38,6 +38,15 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
     } catch (e) { showToast((e as Error).message) }
   }
 
+  const handleDelete = async () => {
+    if (!confirm('确定要删除该主题及所有关联历史和捕获记录吗？此操作不可逆！')) return
+    try {
+      await api.deleteTopic(id)
+      showToast('主题已成功删除')
+      back()
+    } catch (e) { showToast((e as Error).message) }
+  }
+
   if (!topic) return null
 
   const diffTarget = versions.find((v) => v.version === diffFor)
@@ -70,6 +79,9 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
       <div className="versions">
         <button className="btn small ghost" onClick={() => setShowVersions(!showVersions)}>
           {showVersions ? '收起版本历史' : `版本历史(${versions.length})`}
+        </button>
+        <button className="btn small danger" style={{ marginLeft: '10px' }} onClick={handleDelete}>
+          删除
         </button>
         {showVersions && versions.map((v) => (
           <div key={v.id}>

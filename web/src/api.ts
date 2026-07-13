@@ -38,6 +38,7 @@ export const api = {
 
   topics: (q?: string) => req<Topic[]>(`/api/topics${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   topic: (id: string) => req<Topic>(`/api/topics/${id}`),
+  deleteTopic: (id: string) => req<{ ok: boolean }>(`/api/topics/${id}`, { method: 'DELETE' }),
   versions: (id: string) => req<TopicVersion[]>(`/api/topics/${id}/versions`),
   rollback: (id: string, version: number) =>
     req<Topic>(`/api/topics/${id}/rollback/${version}`, { method: 'POST' }),

@@ -68,3 +68,18 @@ def rollback(topic_id: str, version: int):
         body_md=snapshot["body_md"], tags=json.loads(topic["tags"]),
     )
     return _with_tags(updated)
+
+
+@router.delete("/{topic_id}")
+def delete_topic(topic_id: str):
+    topic = db.get_topic(topic_id)
+    if not topic:
+        raise HTTPException(404, "主题不存在")
+    
+    from .. import config
+    if topic["export_filename"]:
+        export_path = config.VAULT_EXPORT_DIR / topic["export_filename"]
+        export_path.unlink(missing_ok=True)
+
+    db.delete_topic(topic_id)
+    return {"ok": True}

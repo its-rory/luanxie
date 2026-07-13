@@ -263,6 +263,28 @@ def all_tags() -> list[str]:
     return sorted(tags)
 
 
+def delete_topic(topic_id: str) -> None:
+    conn = get_conn()
+    # 1. 查找并删除所有关联的 captures 以及磁盘上的媒体文件
+    cur = conn.execute("SELECT media_path FROM captures WHERE topic_id=?", (topic_id,))
+    for row in cur.fetchall():
+        if row["media_path"]:
+            (config.DATA_DIR / row["media_path"]).unlink(missing_ok=True)
+    
+    # 2. 删除 captures 记录
+    conn.execute("DELETE FROM captures WHERE topic_id=?", (topic_id,))
+    
+    # 3. 删除 topic_versions 快照记录
+    conn.execute("DELETE FROM topic_versions WHERE topic_id=?", (topic_id,))
+    
+    # 4. 从 FTS5 虚拟表中删除索引
+    conn.execute("DELETE FROM topics_fts WHERE topic_id=?", (topic_id,))
+    
+    # 5. 删除 topic 本身
+    conn.execute("DELETE FROM topics WHERE id=?", (topic_id,))
+    conn.commit()
+
+
 # ---------- processing log ----------
 
 def log(capture_id: str, stage: str, status: str, detail: str | None = None) -> None:
