@@ -1,6 +1,7 @@
 """Whisper 本地/云端 API 转写。支持云端 API 或是本地 mlx-whisper、faster-whisper、openai-whisper。"""
 import asyncio
 import os
+import subprocess
 from .. import config
 
 WHISPER_MODEL = "turbo"  # 默认本地模型名，对应 large-v3-turbo
@@ -9,18 +10,50 @@ _lock = asyncio.Lock()
 _model_instance = None
 
 
+def _ensure_mp3_format(audio_path: str) -> str:
+    """使用 ffmpeg 将输入音频转换为兼容且体积更小的 mp3 格式。"""
+    ext = os.path.splitext(audio_path)[1].lower()
+    if ext == ".mp3":
+        return audio_path
+
+    output_path = os.path.splitext(audio_path)[0] + "_transcribe.mp3"
+    if os.path.exists(output_path):
+        return output_path
+
+    try:
+        # 将任意格式音频转为 16kHz, 单声道, 64k 码率的 mp3，体积小且保留完整语音信息
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", audio_path,
+                "-acodec", "libmp3lame",
+                "-ar", "16000",
+                "-ac", "1",
+                "-ab", "64k",
+                output_path
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+        return output_path
+    except Exception:
+        # 如果转换失败，退回到原始路径
+        return audio_path
+
+
 async def _transcribe_via_api(audio_path: str) -> str:
     import httpx
     import base64
+
+    # 1. 强力转码压缩音频为标准的 mp3 格式
+    target_path = await asyncio.to_thread(_ensure_mp3_format, audio_path)
+    ext = "mp3"
 
     # 检查是否为多模态 Chat 语音模型 (如 Qwen-Omni, GPT-4o, Audio 等)
     model_lower = config.TRANSCRIPTION_MODEL.lower()
     is_chat_model = any(k in model_lower for k in ["omni", "audio", "instruct", "chat", "gpt-4o", "gemini"])
 
-    filename = os.path.basename(audio_path)
-    ext = os.path.splitext(filename)[1].lower().lstrip(".")
-    if ext == "wave":
-        ext = "wav"
+    filename = os.path.basename(target_path)
 
     if is_chat_model:
         # 走 /v1/chat/completions 接口
@@ -31,7 +64,7 @@ async def _transcribe_via_api(audio_path: str) -> str:
         }
 
         # 读取音频并转为 base64
-        with open(audio_path, "rb") as f:
+        with open(target_path, "rb") as f:
             audio_base64 = base64.b64encode(f.read()).decode("utf-8")
 
         payload = {
@@ -43,7 +76,7 @@ async def _transcribe_via_api(audio_path: str) -> str:
                         {
                             "type": "audio_url",
                             "audio_url": {
-                                "url": f"data:audio/{ext or 'mp3'};base64,{audio_base64}"
+                                "url": f"data:audio/{ext};base64,{audio_base64}"
                             }
                         },
                         {
@@ -70,14 +103,8 @@ async def _transcribe_via_api(audio_path: str) -> str:
 
         # 确定 MIME 类型
         mime_type = "audio/mpeg"
-        if ext == "wav":
-            mime_type = "audio/wav"
-        elif ext == "ogg":
-            mime_type = "audio/ogg"
-        elif ext == "m4a":
-            mime_type = "audio/m4a"
 
-        with open(audio_path, "rb") as f:
+        with open(target_path, "rb") as f:
             files = {
                 "file": (filename, f, mime_type)
             }
