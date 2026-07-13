@@ -141,15 +141,40 @@ def _call_openai(*, model: str, system: list | str, content, schema: type[T],
         {"role": "user", "content": openai_content}
     ]
 
+    import openai
     last_err: Exception | None = None
     for _ in range(2):
-        response = get_openai_client().chat.completions.create(
-            model=model,
-            max_tokens=max_tokens,
-            messages=messages,
-            tools=[tool],
-            tool_choice={"type": "function", "function": {"name": tool_name}},
-        )
+        try:
+            response = get_openai_client().chat.completions.create(
+                model=model,
+                max_tokens=max_tokens,
+                messages=messages,
+                tools=[tool],
+                tool_choice={"type": "function", "function": {"name": tool_name}},
+            )
+        except openai.BadRequestError as e:
+            err_msg = str(e).lower()
+            if "tool_choice" in err_msg or "tool" in err_msg or "20015" in err_msg:
+                try:
+                    # 尝试降级为 "required" (强制要求调用工具，但不由 API 指定具体函数名)
+                    response = get_openai_client().chat.completions.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        messages=messages,
+                        tools=[tool],
+                        tool_choice="required",
+                    )
+                except openai.BadRequestError:
+                    # 进一步降级为 "auto" (自动决定，部分不支持 forced tool call 的模型适用)
+                    response = get_openai_client().chat.completions.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        messages=messages,
+                        tools=[tool],
+                        tool_choice="auto",
+                    )
+            else:
+                raise e
 
         usage = {
             "input_tokens": response.usage.prompt_tokens,
