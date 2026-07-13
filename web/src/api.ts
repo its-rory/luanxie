@@ -48,13 +48,35 @@ export const api = {
 }
 
 export function subscribeEvents(onEvent: (data: Record<string, unknown>) => void): () => void {
-  const es = new EventSource('/api/events')
-  es.onmessage = (e) => {
-    try {
-      onEvent(JSON.parse(e.data))
-    } catch {
-      /* keepalive */
+  let es: EventSource | null = null
+  let closed = false
+  let timer: any = null
+
+  function connect() {
+    if (closed) return
+    es = new EventSource('/api/events')
+    es.onmessage = (e) => {
+      try {
+        onEvent(JSON.parse(e.data))
+      } catch {
+        /* keepalive */
+      }
+    }
+    es.onerror = () => {
+      if (es) {
+        es.close()
+      }
+      if (!closed) {
+        timer = window.setTimeout(connect, 10000)
+      }
     }
   }
-  return () => es.close()
+
+  connect()
+
+  return () => {
+    closed = true
+    if (timer) window.clearTimeout(timer)
+    if (es) es.close()
+  }
 }

@@ -6,6 +6,7 @@ import ReviewPage from './pages/ReviewPage'
 import TopicsPage from './pages/TopicsPage'
 import TopicDetail from './pages/TopicDetail'
 import SettingsPage from './pages/SettingsPage'
+import ErrorBoundary from './components/ErrorBoundary'
 
 export type Tab = 'capture' | 'inbox' | 'review' | 'topics' | 'settings'
 
@@ -68,20 +69,22 @@ export default function App() {
         <span className="sub">丢进来,慢慢长</span>
       </header>
       <main>
-        {tab === 'capture' && <CapturePage onDone={() => { showToast('已收录,后台整理中'); }} showToast={showToast} />}
-        {tab === 'inbox' && <InboxPage tick={tick} openTopic={openTopic} showToast={showToast} />}
-        {tab === 'review' && (
-          <ReviewPage tick={tick} onDecided={() => { refreshReviewCount(); showToast('已处理') }} showToast={showToast} />
-        )}
-        {tab === 'topics' && !topicId && <TopicsPage tick={tick} openTopic={setTopicId} />}
-        {tab === 'topics' && topicId && (
-          <TopicDetail id={topicId} back={() => setTopicId(null)} openByTitle={async (title) => {
-            const list = await api.topics()
-            const hit = list.find((t) => t.title === title)
-            if (hit) setTopicId(hit.id)
-          }} showToast={showToast} />
-        )}
-        {tab === 'settings' && <SettingsPage showToast={showToast} />}
+        <ErrorBoundary>
+          {tab === 'capture' && <CapturePage onDone={() => { showToast('已收录,后台整理中'); }} showToast={showToast} />}
+          {tab === 'inbox' && <InboxPage tick={tick} openTopic={openTopic} showToast={showToast} />}
+          {tab === 'review' && (
+            <ReviewPage tick={tick} onDecided={() => { refreshReviewCount(); showToast('已处理') }} showToast={showToast} />
+          )}
+          {tab === 'topics' && !topicId && <TopicsPage tick={tick} openTopic={setTopicId} />}
+          {tab === 'topics' && topicId && (
+            <TopicDetail id={topicId} back={() => setTopicId(null)} openByTitle={async (title) => {
+              const list = await api.topics()
+              const hit = list.find((t) => t.title === title)
+              if (hit) setTopicId(hit.id)
+            }} showToast={showToast} />
+          )}
+          {tab === 'settings' && <SettingsPage showToast={showToast} />}
+        </ErrorBoundary>
       </main>
       <nav className="tabs">
         {TABS.map((t) => (
