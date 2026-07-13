@@ -2,13 +2,13 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config, db
 from .pipeline import worker
-from .routes import captures, events_route, review, settings, topics
+from .routes import captures, events_route, review, settings, topics, auth
 
 
 @asynccontextmanager
@@ -20,11 +20,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="乱写", lifespan=lifespan)
-app.include_router(captures.router)
-app.include_router(topics.router)
-app.include_router(review.router)
-app.include_router(settings.router)
-app.include_router(events_route.router)
+app.include_router(auth.router)
+
+# Protect all functional routes with session verification
+app.include_router(captures.router, dependencies=[Depends(auth.check_auth)])
+app.include_router(topics.router, dependencies=[Depends(auth.check_auth)])
+app.include_router(review.router, dependencies=[Depends(auth.check_auth)])
+app.include_router(settings.router, dependencies=[Depends(auth.check_auth)])
+app.include_router(events_route.router, dependencies=[Depends(auth.check_auth)])
 
 
 @app.get("/api/health")

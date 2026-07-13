@@ -66,6 +66,11 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token       TEXT PRIMARY KEY,
+  expires_at  REAL NOT NULL
+);
 """
 
 import threading
@@ -352,3 +357,32 @@ def set_setting(key: str, value: str) -> None:
     conn = get_conn()
     with conn:
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+
+
+# ---------- sessions ----------
+
+def create_session(token: str, expires_at: float) -> None:
+    conn = get_conn()
+    with conn:
+        conn.execute("INSERT INTO sessions (token, expires_at) VALUES (?, ?)", (token, expires_at))
+
+
+def verify_session(token: str) -> bool:
+    try:
+        import time
+        row = get_conn().execute(
+            "SELECT expires_at FROM sessions WHERE token=?", (token,)).fetchone()
+        if row:
+            if row[0] > time.time():
+                return True
+            else:
+                delete_session(token)
+    except sqlite3.OperationalError:
+        pass
+    return False
+
+
+def delete_session(token: str) -> None:
+    conn = get_conn()
+    with conn:
+        conn.execute("DELETE FROM sessions WHERE token=?", (token,))

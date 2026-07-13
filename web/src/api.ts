@@ -63,6 +63,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+  login: (password: string) =>
+    req<{ ok: boolean }>('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    }),
+  logout: () => req<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  me: () => req<{ logged_in: boolean }>('/api/auth/me'),
 }
 
 export function subscribeEvents(onEvent: (data: Record<string, unknown>) => void): () => void {

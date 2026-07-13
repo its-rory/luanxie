@@ -22,6 +22,7 @@ TOPIC_LIST_FULL_LIMIT = 150
 
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8787"))
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 
 # 静态默认配置
 _STATIC_DEFAULTS = {

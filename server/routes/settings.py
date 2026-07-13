@@ -116,6 +116,12 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
     except Exception as e:
         return str(e)
 
+def resolve_key(incoming: str, key_name: str) -> str:
+    if incoming == "••••••••":
+        from .. import config
+        return getattr(config, key_name, "")
+    return incoming
+
 @router.get("")
 def get_settings():
     from .. import config
@@ -125,26 +131,34 @@ def get_settings():
         "AUDIO_PROVIDER_NAME", "AUDIO_API_KEY", "AUDIO_BASE_URL", "AUDIO_MODEL",
         "MERGE_PROVIDER_NAME", "MERGE_API_KEY", "MERGE_BASE_URL", "MERGE_MODEL",
     ]
-    # Dynamically read them (which executes __getattr__ and resolves overrides from DB or env)
     result = {}
     for k in keys:
-        result[k] = getattr(config, k, "")
+        val = getattr(config, k, "")
+        if "API_KEY" in k and val:
+            result[k] = "••••••••"
+        else:
+            result[k] = val
     return result
 
 @router.post("")
 async def save_settings(payload: SettingsUpdate):
+    # Resolve keys from placeholder
+    resolved_text_key = resolve_key(payload.TEXT_API_KEY, "TEXT_API_KEY")
+    resolved_image_key = resolve_key(payload.IMAGE_API_KEY, "IMAGE_API_KEY")
+    resolved_audio_key = resolve_key(payload.AUDIO_API_KEY, "AUDIO_API_KEY")
+    resolved_merge_key = resolve_key(payload.MERGE_API_KEY, "MERGE_API_KEY")
+
     # Try testing all configurations first
     tasks = ["text", "image", "audio", "merge"]
     configs = [
-        (payload.TEXT_PROVIDER_NAME, payload.TEXT_API_KEY, payload.TEXT_BASE_URL, payload.TEXT_MODEL),
-        (payload.IMAGE_PROVIDER_NAME, payload.IMAGE_API_KEY, payload.IMAGE_BASE_URL, payload.IMAGE_MODEL),
-        (payload.AUDIO_PROVIDER_NAME, payload.AUDIO_API_KEY, payload.AUDIO_BASE_URL, payload.AUDIO_MODEL),
-        (payload.MERGE_PROVIDER_NAME, payload.MERGE_API_KEY, payload.MERGE_BASE_URL, payload.MERGE_MODEL),
+        (payload.TEXT_PROVIDER_NAME, resolved_text_key, payload.TEXT_BASE_URL, payload.TEXT_MODEL),
+        (payload.IMAGE_PROVIDER_NAME, resolved_image_key, payload.IMAGE_BASE_URL, payload.IMAGE_MODEL),
+        (payload.AUDIO_PROVIDER_NAME, resolved_audio_key, payload.AUDIO_BASE_URL, payload.AUDIO_MODEL),
+        (payload.MERGE_PROVIDER_NAME, resolved_merge_key, payload.MERGE_BASE_URL, payload.MERGE_MODEL),
     ]
 
     errors = {}
     for task, (prov, key, url, model) in zip(tasks, configs):
-        # Only test if model or key is provided
         if key or model:
             err = await test_api_config(task, prov, key, url, model)
             if err:
@@ -156,13 +170,17 @@ async def save_settings(payload: SettingsUpdate):
     # Save to SQLite
     data = payload.model_dump()
     for k, v in data.items():
-        db.set_setting(k, v)
+        if "API_KEY" in k:
+            db.set_setting(k, resolve_key(v, k))
+        else:
+            db.set_setting(k, v)
 
     return {"ok": True}
 
 @router.post("/test")
 async def test_endpoint(payload: TestRequest):
-    err = await test_api_config(payload.task, payload.provider, payload.api_key, payload.base_url, payload.model)
+    resolved_key = resolve_key(payload.api_key, f"{payload.task.upper()}_API_KEY")
+    err = await test_api_config(payload.task, payload.provider, resolved_key, payload.base_url, payload.model)
     if err:
         return {"ok": False, "error": err}
     return {"ok": True}

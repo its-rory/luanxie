@@ -6,6 +6,7 @@ import ReviewPage from './pages/ReviewPage'
 import TopicsPage from './pages/TopicsPage'
 import TopicDetail from './pages/TopicDetail'
 import SettingsPage from './pages/SettingsPage'
+import LoginPage from './pages/LoginPage'
 import ErrorBoundary from './components/ErrorBoundary'
 
 export type Tab = 'capture' | 'inbox' | 'review' | 'topics' | 'settings'
@@ -19,6 +20,7 @@ const TABS: { key: Tab; glyph: string; label: string }[] = [
 ]
 
 export default function App() {
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(null)
   const [tab, setTab] = useState<Tab>('capture')
   const [topicId, setTopicId] = useState<string | null>(null)
   const [reviewCount, setReviewCount] = useState(0)
@@ -38,29 +40,57 @@ export default function App() {
   }, [])
 
   const refreshReviewCount = useCallback(() => {
+    if (!loggedIn) return
     api.review().then((items) => setReviewCount(items.length)).catch(() => {})
+  }, [loggedIn])
+
+  // Check login status on mount
+  useEffect(() => {
+    api.me()
+      .then((res) => setLoggedIn(res.logged_in))
+      .catch(() => setLoggedIn(false))
   }, [])
 
+  // Setup EventSource subscription only when logged in
   useEffect(() => {
+    if (!loggedIn) return
+
     refreshReviewCount()
     const unsubscribe = subscribeEvents((ev) => {
       setTick((t) => t + 1)
       if (ev.kind === 'capture' && ev.status === 'awaiting_review') refreshReviewCount()
       if (ev.kind === 'capture' && ev.status === 'done') refreshReviewCount()
     })
+
     return () => {
       unsubscribe()
       if (toastTimerRef.current) {
         window.clearTimeout(toastTimerRef.current)
       }
     }
-  }, [refreshReviewCount])
+  }, [loggedIn, refreshReviewCount])
 
   const openTopic = useCallback((id: string) => {
     setTopicId(id)
     setTab('topics')
   }, [])
 
+  // 1. Loading state
+  if (loggedIn === null) {
+    return <div className="empty">加载中...</div>
+  }
+
+  // 2. Not logged in state
+  if (loggedIn === false) {
+    return (
+      <>
+        <LoginPage onLoginSuccess={() => setLoggedIn(true)} />
+        {toast && <div className="toast">{toast}</div>}
+      </>
+    )
+  }
+
+  // 3. Logged in state
   return (
     <>
       <header className="masthead">
@@ -77,12 +107,12 @@ export default function App() {
           )}
           {tab === 'topics' && !topicId && <TopicsPage tick={tick} openTopic={setTopicId} />}
           {tab === 'topics' && topicId && (
-          <TopicDetail id={topicId} back={() => setTopicId(null)} openByTitle={async (title) => {
-            const hit = await api.topics(undefined, title).then((res) => res[0]).catch(() => null)
-            if (hit) setTopicId(hit.id)
-          }} showToast={showToast} />
+            <TopicDetail id={topicId} back={() => setTopicId(null)} openByTitle={async (title) => {
+              const hit = await api.topics(undefined, title).then((res) => res[0]).catch(() => null)
+              if (hit) setTopicId(hit.id)
+            }} showToast={showToast} />
           )}
-          {tab === 'settings' && <SettingsPage showToast={showToast} />}
+          {tab === 'settings' && <SettingsPage showToast={showToast} onLogout={() => setLoggedIn(false)} />}
         </ErrorBoundary>
       </main>
       <nav className="tabs">

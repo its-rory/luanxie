@@ -24,7 +24,7 @@ interface SettingsState {
   MERGE_MODEL: string
 }
 
-export default function SettingsPage({ showToast }: { showToast: (m: string) => void }) {
+export default function SettingsPage({ showToast, onLogout }: { showToast: (m: string) => void; onLogout: () => void }) {
   const [health, setHealth] = useState<Health | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [loadingSettings, setLoadingSettings] = useState(false)
@@ -213,6 +213,24 @@ export default function SettingsPage({ showToast }: { showToast: (m: string) => 
           </div>
         </div>
       )}
+
+      <div style={{ padding: '4px 0 12px' }}>
+        <button
+          className="btn danger"
+          style={{ width: '100%', padding: '10px', borderRadius: '10px' }}
+          onClick={async () => {
+            if (!confirm('确定要退出登录吗？')) return
+            try {
+              await api.logout()
+              onLogout()
+            } catch (e) {
+              showToast((e as Error).message)
+            }
+          }}
+        >
+          退出登录
+        </button>
+      </div>
 
       <div className="empty" style={{ padding: '36px 20px', fontSize: 12 }}>
         乱写 · 随手碎念与拍照，自动归档并提取白板文字<br />
