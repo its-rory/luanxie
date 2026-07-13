@@ -187,21 +187,62 @@ def _call_openai(*, model: str, system: list | str, content, schema: type[T],
         tool_call = tool_calls[0] if tool_calls else None
 
         json_data = None
+        # 1. 尝试从正式的 tool_calls 中解析
         if tool_call is not None and tool_call.function.name == tool_name:
             try:
                 json_data = json.loads(tool_call.function.arguments)
             except Exception as e:
                 last_err = e
-        elif message.content:
-            # 兜底：如果模型没有生成正式的 tool_call，但直接在正文中输出了 JSON 字符串，我们也尝试解析
-            text = message.content.strip()
-            start = text.find("{")
-            end = text.rfind("}")
-            if start != -1 and end != -1:
+
+        # 2. 尝试从 reasoning_content (推理思考内容) 中提取 XML 格式的 tool_call
+        reasoning = getattr(message, "reasoning_content", None) or ""
+        if json_data is None and reasoning:
+            r_text = reasoning.strip()
+            start_tag = "<tool_call>"
+            end_tag = "</tool_call>"
+            start_idx = r_text.find(start_tag)
+            end_idx = r_text.find(end_tag)
+            if start_idx != -1 and end_idx != -1:
+                json_str = r_text[start_idx + len(start_tag):end_idx].strip()
                 try:
-                    json_data = json.loads(text[start:end+1])
+                    raw_json = json.loads(json_str)
+                    if isinstance(raw_json, dict) and "arguments" in raw_json:
+                        json_data = raw_json["arguments"]
+                        if isinstance(json_data, str):
+                            json_data = json.loads(json_data)
+                    else:
+                        json_data = raw_json
                 except Exception as e:
                     last_err = e
+
+        # 3. 尝试从正文 content 中提取 (包括 XML 格式和标准 JSON 格式)
+        if json_data is None and message.content:
+            text = message.content.strip()
+            start_tag = "<tool_call>"
+            end_tag = "</tool_call>"
+            start_idx = text.find(start_tag)
+            end_idx = text.find(end_tag)
+            if start_idx != -1 and end_idx != -1:
+                json_str = text[start_idx + len(start_tag):end_idx].strip()
+                try:
+                    raw_json = json.loads(json_str)
+                    if isinstance(raw_json, dict) and "arguments" in raw_json:
+                        json_data = raw_json["arguments"]
+                        if isinstance(json_data, str):
+                            json_data = json.loads(json_data)
+                    else:
+                        json_data = raw_json
+                except Exception as e:
+                    last_err = e
+            else:
+                # 寻找标准的 JSON 边界 { 和 }
+                start = text.find("{")
+                end = text.rfind("}")
+                if start != -1 and end != -1:
+                    try:
+                        json_data = json.loads(text[start:end+1])
+                    except Exception as e:
+                        last_err = e
 
         if json_data is None:
             last_err = ValueError(
