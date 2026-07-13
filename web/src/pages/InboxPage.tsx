@@ -75,5 +75,15 @@ export default function InboxPage({ tick, openTopic, showToast }: {
 function TopicName({ id, onClick }: { id: string; onClick: () => void }) {
   const [title, setTitle] = useState('…')
   useEffect(() => { api.topic(id).then((t) => setTitle(t.title)).catch(() => setTitle('?')) }, [id])
-  return <span className="topic-link" onClick={onClick}>[[{title}]]</span>
+  return (
+    <span
+      className="topic-link"
+      role="link"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+    >
+      [[{title}]]
+    </span>
+  )
 }

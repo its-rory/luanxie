@@ -32,12 +32,13 @@ MERGE_MODEL = os.getenv("MERGE_MODEL", "claude-opus-4-8")
 # 置信度阈值:达到该级别及以上的分类结果自动合并,低于则进 awaiting_review。
 # 可选 high / medium / low;设为 low 即全自动。
 AUTO_MERGE_CONFIDENCE = os.getenv("AUTO_MERGE_CONFIDENCE", "high")
+if AUTO_MERGE_CONFIDENCE not in ("high", "medium", "low"):
+    AUTO_MERGE_CONFIDENCE = "high"
 
 VAULT_EXPORT_DIR = Path(
     os.getenv(
         "VAULT_EXPORT_DIR",
-        "/Users/linxiansheng/Library/Mobile Documents/"
-        "iCloud~md~obsidian/Documents/OBVault/乱写",
+        str(PROJECT_ROOT / "data" / "export"),
     )
 )
 

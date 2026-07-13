@@ -2,9 +2,14 @@ import type { Capture, Health, Topic, TopicVersion } from './types'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
+  const contentType = res.headers.get('content-type') || ''
+  const isJson = contentType.includes('application/json')
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
+    const body = isJson ? await res.json().catch(() => ({})) : {}
     throw new Error(body.detail || `请求失败 (${res.status})`)
+  }
+  if (!isJson) {
+    throw new Error(`非 JSON 响应格式 (${res.status})`)
   }
   return res.json()
 }
@@ -36,7 +41,8 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  topics: (q?: string) => req<Topic[]>(`/api/topics${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  topics: (q?: string, title?: string) =>
+    req<Topic[]>(`/api/topics${title ? `?title=${encodeURIComponent(title)}` : q ? `?q=${encodeURIComponent(q)}` : ''}`),
   topic: (id: string) => req<Topic>(`/api/topics/${id}`),
   deleteTopic: (id: string) => req<{ ok: boolean }>(`/api/topics/${id}`, { method: 'DELETE' }),
   versions: (id: string) => req<TopicVersion[]>(`/api/topics/${id}/versions`),

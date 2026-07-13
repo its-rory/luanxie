@@ -63,7 +63,11 @@ CREATE INDEX IF NOT EXISTS idx_captures_status ON captures(status);
 CREATE INDEX IF NOT EXISTS idx_captures_created ON captures(created_at DESC);
 """
 
-_conn: sqlite3.Connection | None = None
+import threading
+
+_local = threading.local()
+_schema_initialized = False
+_schema_lock = threading.Lock()
 
 
 def now() -> str:
@@ -71,14 +75,19 @@ def now() -> str:
 
 
 def get_conn() -> sqlite3.Connection:
-    global _conn
-    if _conn is None:
-        _conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
-        _conn.row_factory = sqlite3.Row
-        _conn.execute("PRAGMA journal_mode=WAL")
-        _conn.execute("PRAGMA foreign_keys=ON")
-        _conn.executescript(SCHEMA)
-    return _conn
+    global _schema_initialized
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = sqlite3.connect(config.DB_PATH)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        with _schema_lock:
+            if not _schema_initialized:
+                conn.executescript(SCHEMA)
+                _schema_initialized = True
+        _local.conn = conn
+    return conn
 
 
 def _rows(cur) -> list[dict]:
@@ -237,20 +246,22 @@ def update_topic(topic_id: str, capture_id: str | None, *, title: str,
     """快照旧版本后写入新内容,version+1,同步 FTS。"""
     conn = get_conn()
     old = get_topic(topic_id)
+    if old is None:
+        raise ValueError(f"Topic with id '{topic_id}' not found")
     ts = now()
-    conn.execute(
-        "INSERT INTO topic_versions (topic_id, version, body_md, capture_id, created_at)"
-        " VALUES (?,?,?,?,?)",
-        (topic_id, old["version"], old["body_md"], capture_id, ts))
-    conn.execute(
-        "UPDATE topics SET title=?, summary=?, body_md=?, tags=?, version=version+1,"
-        " updated_at=? WHERE id=?",
-        (title, summary, body_md, json.dumps(tags, ensure_ascii=False), ts, topic_id))
-    conn.execute("DELETE FROM topics_fts WHERE topic_id=?", (topic_id,))
-    conn.execute(
-        "INSERT INTO topics_fts (topic_id, title, summary, tags) VALUES (?,?,?,?)",
-        (topic_id, title, summary, json.dumps(tags, ensure_ascii=False)))
-    conn.commit()
+    with conn:
+        conn.execute(
+            "INSERT INTO topic_versions (topic_id, version, body_md, capture_id, created_at)"
+            " VALUES (?,?,?,?,?)",
+            (topic_id, old["version"], old["body_md"], capture_id, ts))
+        conn.execute(
+            "UPDATE topics SET title=?, summary=?, body_md=?, tags=?, version=version+1,"
+            " updated_at=? WHERE id=?",
+            (title, summary, body_md, json.dumps(tags, ensure_ascii=False), ts, topic_id))
+        conn.execute("DELETE FROM topics_fts WHERE topic_id=?", (topic_id,))
+        conn.execute(
+            "INSERT INTO topics_fts (topic_id, title, summary, tags) VALUES (?,?,?,?)",
+            (topic_id, title, summary, json.dumps(tags, ensure_ascii=False)))
     return get_topic(topic_id)
 
 

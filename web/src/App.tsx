@@ -77,11 +77,10 @@ export default function App() {
           )}
           {tab === 'topics' && !topicId && <TopicsPage tick={tick} openTopic={setTopicId} />}
           {tab === 'topics' && topicId && (
-            <TopicDetail id={topicId} back={() => setTopicId(null)} openByTitle={async (title) => {
-              const list = await api.topics()
-              const hit = list.find((t) => t.title === title)
-              if (hit) setTopicId(hit.id)
-            }} showToast={showToast} />
+          <TopicDetail id={topicId} back={() => setTopicId(null)} openByTitle={async (title) => {
+            const hit = await api.topics(undefined, title).then((res) => res[0]).catch(() => null)
+            if (hit) setTopicId(hit.id)
+          }} showToast={showToast} />
           )}
           {tab === 'settings' && <SettingsPage showToast={showToast} />}
         </ErrorBoundary>

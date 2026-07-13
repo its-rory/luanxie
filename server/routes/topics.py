@@ -15,7 +15,12 @@ def _with_tags(topic: dict) -> dict:
 
 
 @router.get("")
-def list_topics(q: str | None = None):
+def list_topics(q: str | None = None, title: str | None = None):
+    if title:
+        topic = db.get_topic_by_title(title)
+        if topic:
+            return [_with_tags(topic)]
+        return []
     return [_with_tags(t) for t in db.list_topics(q)]
 
 

@@ -90,7 +90,7 @@ async def _transcribe_via_api(audio_path: str) -> str:
         }
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, headers=headers, json=payload, timeout=60.0)
+            response = await client.post(url, headers=headers, json=payload, timeout=300.0)
             response.raise_for_status()
             result = response.json()
             return result["choices"][0]["message"]["content"].strip()
@@ -113,7 +113,7 @@ async def _transcribe_via_api(audio_path: str) -> str:
                 "model": config.TRANSCRIPTION_MODEL
             }
             async with httpx.AsyncClient() as client:
-                response = await client.post(url, headers=headers, files=files, data=data, timeout=60.0)
+                response = await client.post(url, headers=headers, files=files, data=data, timeout=300.0)
                 response.raise_for_status()
                 result = response.json()
                 return result["text"].strip()

@@ -6,7 +6,10 @@ from .. import exporter
 router = APIRouter(prefix="/api/export", tags=["export"])
 
 
+import asyncio
+
+
 @router.post("")
-def export_now():
-    exported = exporter.export_all()
+async def export_now():
+    exported = await asyncio.to_thread(exporter.export_all)
     return {"exported": exported, "count": len(exported)}

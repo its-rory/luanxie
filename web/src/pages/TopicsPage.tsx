@@ -34,7 +34,14 @@ export default function TopicsPage({ tick, openTopic }: {
       <div className="section-title">知识库 <span className="count">{topics.length} 个主题</span></div>
       <input className="search-box" placeholder="搜标题、摘要、标签…" value={q} onChange={(e) => setQ(e.target.value)} />
       {shown.map((t) => (
-        <div className="card topic-card" key={t.id} onClick={() => openTopic(t.id)}>
+        <div
+          className="card topic-card"
+          key={t.id}
+          role="button"
+          tabIndex={0}
+          onClick={() => openTopic(t.id)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTopic(t.id); } }}
+        >
           <div className="t-title">{t.title}</div>
           <div className="t-summary">{t.summary}</div>
           <div className="tags">

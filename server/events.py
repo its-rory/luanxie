@@ -1,8 +1,9 @@
-"""进程内事件广播:worker 推送 capture 状态变化,SSE 端点转发给前端。"""
 import asyncio
 import json
+import threading
 
 _subscribers: set[asyncio.Queue] = set()
+_subscribers_lock = threading.Lock()
 
 
 def subscribe() -> asyncio.Queue:
@@ -11,12 +12,14 @@ def subscribe() -> asyncio.Queue:
         q.loop = asyncio.get_running_loop()
     except RuntimeError:
         q.loop = None
-    _subscribers.add(q)
+    with _subscribers_lock:
+        _subscribers.add(q)
     return q
 
 
 def unsubscribe(q: asyncio.Queue) -> None:
-    _subscribers.discard(q)
+    with _subscribers_lock:
+        _subscribers.discard(q)
 
 
 def publish(event: dict) -> None:
@@ -26,9 +29,13 @@ def publish(event: dict) -> None:
         try:
             queue.put_nowait(payload)
         except asyncio.QueueFull:
-            _subscribers.discard(queue)
+            with _subscribers_lock:
+                _subscribers.discard(queue)
 
-    for q in list(_subscribers):
+    with _subscribers_lock:
+        subs = list(_subscribers)
+
+    for q in subs:
         loop = getattr(q, "loop", None)
         if loop and loop.is_running():
             loop.call_soon_threadsafe(safe_put, q, data)
@@ -36,6 +43,7 @@ def publish(event: dict) -> None:
             try:
                 q.put_nowait(data)
             except asyncio.QueueFull:
-                _subscribers.discard(q)
+                with _subscribers_lock:
+                    _subscribers.discard(q)
             except Exception:
                 pass

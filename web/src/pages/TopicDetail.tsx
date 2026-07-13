@@ -47,7 +47,7 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
     } catch (e) { showToast((e as Error).message) }
   }
 
-  if (!topic) return null
+  if (!topic) return <div className="empty">加载中...</div>
 
   const diffTarget = versions.find((v) => v.version === diffFor)
 
@@ -66,7 +66,17 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
             a: ({ href, children }) => {
               if (href?.startsWith('#wiki:')) {
                 const title = decodeURIComponent(href.slice(6))
-                return <span className="wiki-link" onClick={() => openByTitle(title)}>[[{children}]]</span>
+                return (
+                  <span
+                    className="wiki-link"
+                    role="link"
+                    tabIndex={0}
+                    onClick={() => openByTitle(title)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openByTitle(title); } }}
+                  >
+                    [[{children}]]
+                  </span>
+                )
               }
               return <a href={href} target="_blank" rel="noreferrer">{children}</a>
             },
