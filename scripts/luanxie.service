@@ -1,0 +1,23 @@
+[Unit]
+Description=Luanxie Knowledge Base Server
+After=network.target tailscaled.service
+
+[Service]
+Type=simple
+# 部署说明:
+# 1. 请将 WorkingDirectory 更改为您的实际 luanxie 仓库绝对路径
+WorkingDirectory=/opt/luanxie
+# 2. 请将 ExecStart 中的路径更改为 run.sh 的实际绝对路径
+ExecStart=/bin/bash /opt/luanxie/scripts/run.sh
+Restart=always
+RestartSec=5
+
+# 如果以系统服务运行，您可以指定运行用户与用户组 (建议设置为普通用户)
+# User=yourusername
+# Group=yourgroup
+
+# 如果您想加载特定的环境变量，可以使用下面的指令
+# EnvironmentFile=/opt/luanxie/.env
+
+[Install]
+WantedBy=multi-user.target

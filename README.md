@@ -142,18 +142,19 @@ stateDiagram-v2
 
 | 依赖 | 是否必需 | 说明 |
 |---|:---:|---|
-| macOS · Apple Silicon | ✅ | 本地转写依赖 `mlx-whisper`,仅支持 Apple 芯片 |
+| macOS (Apple Silicon) 或 Linux / Windows | ✅ | 本地转写：macOS 默认使用 `mlx-whisper`；Linux/其他系统使用 `faster-whisper` |
 | [uv](https://docs.astral.sh/uv/) | ✅ | 运行后端;首次会自动装好 Python 3.12 与依赖 |
 | [Node.js](https://nodejs.org) 18+ | ✅ | 构建前端(`web/dist` 不在仓库里,首次必须自己 build) |
 | `ANTHROPIC_API_KEY` | ✅ | 归类用 Haiku、合并用 Opus;没有它 AI 流水线不工作 |
+| `ffmpeg` | ✅ | 语音转写必需，macOS 用 `brew install ffmpeg`，Linux 用 `sudo apt install ffmpeg` |
 | [Tailscale](https://tailscale.com) | ⬜ | 仅手机端录音需要(HTTPS);只用文字 / 拍照可不装 |
 
-检查前置:`uv --version`、`node --version`。
+检查前置:`uv --version`、`node --version`、`ffmpeg -version`。
 
 ### 2. 安装并启动
 
 ```bash
-git clone https://github.com/janauto/luanxie.git
+git clone https://github.com/its-rory/luanxie.git
 cd luanxie
 
 # 配置 API key
@@ -170,9 +171,9 @@ cd web && npm install && npm run build && cd ..
 `run.sh` 会打印实际监听地址:
 
 - 没有 Tailscale → `http://<你的局域网IP>:8787`(手机端录音不可用)
-- 有 Tailscale → `https://<你的Mac名>.<tailnet>.ts.net:8787`
+- 有 Tailscale → `https://<你的主机名>.<tailnet>.ts.net:8787`
 
-> 首次 `run.sh` 会由 `uv` 自动创建虚拟环境并安装依赖,可能要等一两分钟。首次语音转写还会下载约 1.6GB 的 whisper 模型。
+> 首次 `run.sh` 会由 `uv` 自动创建虚拟环境并安装依赖,可能要等一两分钟。首次语音转写还会下载约 1.5GB 的 whisper-turbo 模型。
 
 ### 3. 冒烟测试
 
@@ -212,8 +213,9 @@ curl -s http://localhost:8787/api/health
 
 > 拍照和文字在 HTTP 下也能用;只有录音必须 HTTPS(浏览器 secure context 限制)。
 
-## 开机常驻(可选)
+## 开机常驻与后台运行(可选)
 
+### macOS (LaunchAgents)
 让服务随 Mac 开机自启:
 
 ```bash
@@ -222,6 +224,27 @@ launchctl load ~/Library/LaunchAgents/com.luanxie.server.plist
 ```
 
 > 仓库里的 plist 用的是示例路径。若你的项目不在 `~/Desktop/乱写`,先把 plist 里的 `ProgramArguments` 与 `WorkingDirectory` 改成你的实际路径。
+
+### Linux (Systemd)
+在 Linux 上，您可以使用 systemd 将其配置为系统服务：
+
+1. 编辑 `scripts/luanxie.service`，将其中的 `WorkingDirectory` 和 `ExecStart` 路径修改为您的项目绝对路径。
+2. 将服务文件复制到 systemd 系统目录：
+   ```bash
+   sudo cp scripts/luanxie.service /etc/systemd/system/
+   ```
+3. 重新加载配置并启动服务：
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable luanxie
+   sudo systemctl start luanxie
+   ```
+4. 查看服务状态或日志：
+   ```bash
+   sudo systemctl status luanxie
+   # 或者使用 journalctl 查看日志
+   journalctl -u luanxie -f
+   ```
 
 ## 配置(.env)
 

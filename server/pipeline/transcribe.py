@@ -1,21 +1,97 @@
-"""mlx-whisper 本地转写。模型懒加载单例(首次调用会下载 ~1.6GB)。"""
+"""Whisper 本地/云端 API 转写。支持云端 API 或是本地 mlx-whisper、faster-whisper、openai-whisper。"""
 import asyncio
-
+import os
 from .. import config
 
-WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
+WHISPER_MODEL = "turbo"  # 默认本地模型名，对应 large-v3-turbo
 
 _lock = asyncio.Lock()
+_model_instance = None
+
+
+async def _transcribe_via_api(audio_path: str) -> str:
+    import httpx
+    url = f"{config.TRANSCRIPTION_BASE_URL.rstrip('/')}/audio/transcriptions"
+    headers = {
+        "Authorization": f"Bearer {config.TRANSCRIPTION_API_KEY}"
+    }
+
+    # 获取文件名
+    filename = os.path.basename(audio_path)
+
+    # 确定 MIME 类型 (简单根据后缀判断)
+    ext = os.path.splitext(filename)[1].lower()
+    mime_type = "audio/mpeg"
+    if ext in (".wav", ".wave"):
+        mime_type = "audio/wav"
+    elif ext == ".ogg":
+        mime_type = "audio/ogg"
+    elif ext == ".m4a":
+        mime_type = "audio/m4a"
+
+    with open(audio_path, "rb") as f:
+        files = {
+            "file": (filename, f, mime_type)
+        }
+        data = {
+            "model": config.TRANSCRIPTION_MODEL
+        }
+        async with httpx.AsyncClient() as client:
+            # 60秒超时，API 响应通常较快
+            response = await client.post(url, headers=headers, files=files, data=data, timeout=60.0)
+            response.raise_for_status()
+            result = response.json()
+            return result["text"].strip()
 
 
 def _transcribe_sync(audio_path: str) -> str:
-    import mlx_whisper  # 懒导入:未安装时不影响文字/图片链路
+    global _model_instance
 
-    result = mlx_whisper.transcribe(audio_path, path_or_hf_repo=WHISPER_MODEL)
-    return result["text"].strip()
+    # 1. 尝试导入 mlx_whisper (仅 macOS Apple Silicon)
+    try:
+        import mlx_whisper
+        # mlx-whisper 使用特定的 HF repo 格式
+        model_name = "mlx-community/whisper-large-v3-turbo"
+        result = mlx_whisper.transcribe(audio_path, path_or_hf_repo=model_name)
+        return result["text"].strip()
+    except ImportError:
+        pass
+
+    # 2. 尝试导入 faster_whisper
+    try:
+        from faster_whisper import WhisperModel
+        if _model_instance is None:
+            # device="auto" 自动检测 cuda (GPU) 或 cpu
+            # compute_type="default" 根据设备选择最佳计算精度 (如 float16 / int8 / float32)
+            _model_instance = WhisperModel(WHISPER_MODEL, device="auto", compute_type="default")
+        segments, info = _model_instance.transcribe(audio_path, beam_size=5)
+        return "".join(segment.text for segment in segments).strip()
+    except ImportError:
+        pass
+
+    # 3. 尝试导入 openai-whisper 作为最后的备用
+    try:
+        import whisper
+        if _model_instance is None:
+            _model_instance = whisper.load_model(WHISPER_MODEL)
+        result = _model_instance.transcribe(audio_path)
+        return result["text"].strip()
+    except ImportError:
+        pass
+
+    raise ImportError(
+        "未找到可用的 Whisper 库。请设置 TRANSCRIPTION_API_KEY 使用云端 API，"
+        "或本地安装 mlx-whisper (macOS) / faster-whisper/openai-whisper (Linux/Windows)。"
+    )
 
 
 async def transcribe(media_path: str) -> str:
     path = str(config.DATA_DIR / media_path)
-    async with _lock:  # 模型非线程安全,串行执行
+
+    # 如果配置了云端转写 API，优先使用 API，支持并发，不需要获取本地模型锁
+    if config.TRANSCRIPTION_API_KEY:
+        return await _transcribe_via_api(path)
+
+    async with _lock:  # 本地模型非线程安全, 串行执行
         return await asyncio.to_thread(_transcribe_sync, path)
+

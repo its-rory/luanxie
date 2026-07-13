@@ -14,6 +14,11 @@ WEB_DIST = PROJECT_ROOT / "web" / "dist"
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
+# 语音转文字 API 配置 (如使用云端转写)
+TRANSCRIPTION_API_KEY = os.getenv("TRANSCRIPTION_API_KEY", "")
+TRANSCRIPTION_BASE_URL = os.getenv("TRANSCRIPTION_BASE_URL", "https://api.openai.com/v1")
+TRANSCRIPTION_MODEL = os.getenv("TRANSCRIPTION_MODEL", "whisper-1")
+
 CLASSIFY_MODEL = os.getenv("CLASSIFY_MODEL", "claude-haiku-4-5")
 MERGE_MODEL = os.getenv("MERGE_MODEL", "claude-opus-4-8")
 

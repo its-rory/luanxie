@@ -42,7 +42,10 @@ def health():
     return {
         "queue_depth": worker.queue_depth(),
         "db": str(config.DB_PATH),
-        "whisper_installed": importlib.util.find_spec("mlx_whisper") is not None,
+        "whisper_installed": bool(config.TRANSCRIPTION_API_KEY) or any(
+            importlib.util.find_spec(lib) is not None
+            for lib in ["mlx_whisper", "faster_whisper", "whisper"]
+        ),
         "api_key_set": bool(config.ANTHROPIC_API_KEY),
         "export_dir": str(config.VAULT_EXPORT_DIR),
         "auto_merge_confidence": config.AUTO_MERGE_CONFIDENCE,
