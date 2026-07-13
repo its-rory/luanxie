@@ -22,10 +22,10 @@ TOPIC_LIST_FULL_LIMIT = 150
 
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8787"))
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 
 # 静态默认配置
 _STATIC_DEFAULTS = {
+    "ADMIN_PASSWORD": "admin",
     "LLM_PROVIDER": "",
     "ANTHROPIC_API_KEY": "",
     "ANTHROPIC_BASE_URL": "",
@@ -68,7 +68,22 @@ _FALLBACK_MAPS = {
     "TRANSCRIPTION_MODEL": "AUDIO_MODEL",
 }
 
+_last_env_mtime = 0
+
+def reload_env_if_needed():
+    global _last_env_mtime
+    env_path = PROJECT_ROOT / ".env"
+    if env_path.exists():
+        try:
+            mtime = env_path.stat().st_mtime
+            if mtime != _last_env_mtime:
+                load_dotenv(env_path, override=True)
+                _last_env_mtime = mtime
+        except Exception:
+            pass
+
 def __getattr__(name: str):
+    reload_env_if_needed()
     target_name = _FALLBACK_MAPS.get(name, name)
 
     # 1. 尝试从数据库加载设置
