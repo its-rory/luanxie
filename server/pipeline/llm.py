@@ -255,24 +255,27 @@ def _call_openai(*, model: str, system: list | str, content, schema: type[T],
             return schema.model_validate(json_data), usage
         except (ValidationError, json.JSONDecodeError) as e:
             last_err = e
+            tc_id = tool_call.id if tool_call else "call_fallback"
+            tc_name = tool_call.function.name if (tool_call and getattr(tool_call, "function", None)) else tool_name
+            tc_args = tool_call.function.arguments if (tool_call and getattr(tool_call, "function", None)) else json.dumps(json_data)
             messages = messages + [
                 {
                     "role": "assistant",
                     "content": message.content,
                     "tool_calls": [
                         {
-                            "id": tool_call.id,
+                            "id": tc_id,
                             "type": "function",
                             "function": {
-                                "name": tool_call.function.name,
-                                "arguments": tool_call.function.arguments
+                                "name": tc_name,
+                                "arguments": tc_args
                             }
                         }
                     ]
                 },
                 {
                     "role": "tool",
-                    "tool_call_id": tool_call.id,
+                    "tool_call_id": tc_id,
                     "content": f"参数校验失败,请重新调用 {tool_name}: {e}"
                 }
             ]

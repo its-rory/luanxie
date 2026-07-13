@@ -7,16 +7,24 @@ export default function TopicsPage({ tick, openTopic }: {
   openTopic: (id: string) => void
 }) {
   const [topics, setTopics] = useState<Topic[]>([])
+  const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
 
   useEffect(() => {
-    api.topics().then(setTopics).catch(() => {})
+    setLoading(true)
+    api.topics()
+      .then(setTopics)
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [tick])
 
   const shown = q.trim()
     ? topics.filter((t) =>
         (t.title + t.summary + t.tags.join(' ')).toLowerCase().includes(q.trim().toLowerCase()))
     : topics
+
+  if (loading)
+    return <div className="empty">加载中...</div>
 
   if (!topics.length)
     return <div className="empty"><span className="mark">库</span>知识库还是空的<br />丢几条乱写,主题会自己长出来</div>

@@ -11,9 +11,14 @@ export default function InboxPage({ tick, openTopic, showToast }: {
   showToast: (m: string) => void
 }) {
   const [items, setItems] = useState<Capture[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.captures().then(setItems).catch(() => {})
+    setLoading(true)
+    api.captures()
+      .then(setItems)
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [tick])
 
   const retry = async (id: string) => {
@@ -26,6 +31,9 @@ export default function InboxPage({ tick, openTopic, showToast }: {
       setItems((xs) => xs.filter((x) => x.id !== id))
     } catch (e) { showToast((e as Error).message) }
   }
+
+  if (loading)
+    return <div className="empty">加载中...</div>
 
   if (!items.length)
     return <div className="empty"><span className="mark">件</span>还没有乱写<br />去首页丢一条吧</div>

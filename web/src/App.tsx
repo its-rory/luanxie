@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, subscribeEvents } from './api'
 import CapturePage from './pages/CapturePage'
 import InboxPage from './pages/InboxPage'
@@ -22,11 +22,18 @@ export default function App() {
   const [topicId, setTopicId] = useState<string | null>(null)
   const [reviewCount, setReviewCount] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
+  const toastTimerRef = useRef<number | null>(null)
   const [tick, setTick] = useState(0) // SSE 驱动的刷新信号
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
-    window.setTimeout(() => setToast(null), 2600)
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current)
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null)
+      toastTimerRef.current = null
+    }, 2600)
   }, [])
 
   const refreshReviewCount = useCallback(() => {
@@ -35,11 +42,17 @@ export default function App() {
 
   useEffect(() => {
     refreshReviewCount()
-    return subscribeEvents((ev) => {
+    const unsubscribe = subscribeEvents((ev) => {
       setTick((t) => t + 1)
       if (ev.kind === 'capture' && ev.status === 'awaiting_review') refreshReviewCount()
       if (ev.kind === 'capture' && ev.status === 'done') refreshReviewCount()
     })
+    return () => {
+      unsubscribe()
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current)
+      }
+    }
   }, [refreshReviewCount])
 
   const openTopic = useCallback((id: string) => {

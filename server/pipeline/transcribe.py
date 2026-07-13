@@ -162,11 +162,19 @@ def _transcribe_sync(audio_path: str) -> str:
 
 async def transcribe(media_path: str) -> str:
     path = str(config.DATA_DIR / media_path)
+    temp_mp3 = os.path.splitext(path)[0] + "_transcribe.mp3"
 
-    # 如果配置了云端转写 API，优先使用 API，支持并发，不需要获取本地模型锁
-    if config.TRANSCRIPTION_API_KEY:
-        return await _transcribe_via_api(path)
+    try:
+        # 如果配置了云端转写 API，优先使用 API，支持并发，不需要获取本地模型锁
+        if config.TRANSCRIPTION_API_KEY:
+            return await _transcribe_via_api(path)
 
-    async with _lock:  # 本地模型非线程安全, 串行执行
-        return await asyncio.to_thread(_transcribe_sync, path)
+        async with _lock:  # 本地模型非线程安全, 串行执行
+            return await asyncio.to_thread(_transcribe_sync, path)
+    finally:
+        if os.path.exists(temp_mp3):
+            try:
+                os.remove(temp_mp3)
+            except Exception:
+                pass
 

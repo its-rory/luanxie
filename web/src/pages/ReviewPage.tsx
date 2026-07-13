@@ -13,11 +13,21 @@ export default function ReviewPage({ tick, onDecided, showToast }: {
   const [pickedTopic, setPickedTopic] = useState('')
   const [newTitle, setNewTitle] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.review().then(setItems).catch(() => {})
-    api.topics().then(setTopics).catch(() => {})
+    setLoading(true)
+    Promise.all([
+      api.review().then(setItems),
+      api.topics().then(setTopics)
+    ]).catch(() => {})
+      .finally(() => setLoading(false))
   }, [tick])
+
+  useEffect(() => {
+    setPickedTopic('')
+    setNewTitle('')
+  }, [reassignFor])
 
   const act = async (id: string, body: { action: string; topic_id?: string; new_topic_title?: string }) => {
     setBusy(id)
@@ -34,6 +44,9 @@ export default function ReviewPage({ tick, onDecided, showToast }: {
       setBusy(null)
     }
   }
+
+  if (loading)
+    return <div className="empty">加载中...</div>
 
   if (!items.length)
     return <div className="empty"><span className="mark">审</span>没有等待确认的归类<br />AI 拿得准的都自动入库了</div>

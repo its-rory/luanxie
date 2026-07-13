@@ -23,7 +23,7 @@ export const api = {
     return req<Capture>('/api/captures', { method: 'POST', body: form })
   },
   captures: (status?: string) =>
-    req<Capture[]>(`/api/captures${status ? `?status=${status}` : ''}`),
+    req<Capture[]>(`/api/captures${status ? `?status=${encodeURIComponent(status)}` : ''}`),
   capture: (id: string) => req<Capture>(`/api/captures/${id}`),
   retry: (id: string) => req<Capture>(`/api/captures/${id}/retry`, { method: 'POST' }),
   deleteCapture: (id: string) => req<{ ok: boolean }>(`/api/captures/${id}`, { method: 'DELETE' }),

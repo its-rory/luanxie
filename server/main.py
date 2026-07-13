@@ -58,7 +58,12 @@ if config.WEB_DIST.exists():
 
     @app.get("/{path:path}")
     def spa(path: str):
-        file = config.WEB_DIST / path
-        if path and file.is_file():
-            return FileResponse(file)
+        try:
+            resolved_dist = config.WEB_DIST.resolve()
+            file = (config.WEB_DIST / path).resolve()
+            if path and file.is_file() and file.is_relative_to(resolved_dist):
+                return FileResponse(file)
+        except Exception:
+            pass
         return FileResponse(config.WEB_DIST / "index.html")
+

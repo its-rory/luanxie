@@ -13,6 +13,8 @@ ALLOWED_MEDIA = {
 }
 
 
+MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25MB
+
 @router.post("")
 async def create_capture(type: str = Form(...), text: str | None = Form(None),
                          file: UploadFile | None = None):
@@ -27,9 +29,14 @@ async def create_capture(type: str = Form(...), text: str | None = Form(None),
                   if file.filename and "." in file.filename else "")
         if suffix not in ALLOWED_MEDIA[type]:
             raise HTTPException(400, f"不支持的{type}格式: {suffix or '未知'}")
+        
+        content = await file.read(MAX_UPLOAD_SIZE + 1)
+        if len(content) > MAX_UPLOAD_SIZE:
+            raise HTTPException(413, "文件大小超出限制(最大 25MB)")
+            
         name = f"{uuid.uuid4().hex[:12]}{suffix}"
         dest = config.MEDIA_DIR / name
-        dest.write_bytes(await file.read())
+        dest.write_bytes(content)
         cap = db.create_capture(type, media_path=f"media/{name}")
     else:
         raise HTTPException(400, "type 必须是 text/audio/image")
@@ -41,6 +48,7 @@ async def create_capture(type: str = Form(...), text: str | None = Form(None),
 
 @router.get("")
 def list_captures(status: str | None = None, limit: int = 50, offset: int = 0):
+    limit = min(limit, 200)
     return db.list_captures(status=status, limit=limit, offset=offset)
 
 

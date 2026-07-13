@@ -125,6 +125,16 @@ def list_captures(status: str | None = None, limit: int = 50, offset: int = 0) -
 
 
 def update_capture(capture_id: str, **fields) -> None:
+    if not fields:
+        return
+    allowed = {
+        "type", "status", "raw_text", "media_path", "transcript", "clean_text",
+        "topic_id", "confidence", "suggestion", "error", "retry_count", "created_at",
+        "processed_at"
+    }
+    for k in fields:
+        if k not in allowed:
+            raise ValueError(f"Invalid column: {k}")
     conn = get_conn()
     cols = ", ".join(f"{k}=?" for k in fields)
     conn.execute(f"UPDATE captures SET {cols} WHERE id=?",
@@ -163,8 +173,14 @@ def create_topic(title: str, summary: str = "") -> dict:
     except sqlite3.IntegrityError:
         # title UNIQUE:并发/重试时复用已有主题
         conn.rollback()
-        return get_topic_by_title(title)
-    return get_topic(tid)
+        topic = get_topic_by_title(title)
+        if topic is None:
+            raise RuntimeError(f"Failed to retrieve existing topic with title '{title}' after IntegrityError")
+        return topic
+    topic = get_topic(tid)
+    if topic is None:
+        raise RuntimeError(f"Failed to retrieve newly created topic with id '{tid}'")
+    return topic
 
 
 def get_topic(topic_id: str) -> dict | None:
@@ -180,14 +196,24 @@ def get_topic_by_title(title: str) -> dict | None:
 def list_topics(q: str | None = None) -> list[dict]:
     conn = get_conn()
     if q:
-        cur = conn.execute(
-            "SELECT t.* FROM topics t JOIN topics_fts f ON t.id=f.topic_id"
-            " WHERE topics_fts MATCH ? ORDER BY t.updated_at DESC", (q,))
+        try:
+            cur = conn.execute(
+                "SELECT t.* FROM topics t JOIN topics_fts f ON t.id=f.topic_id"
+                " WHERE topics_fts MATCH ? ORDER BY t.updated_at DESC", (q,))
+            return _rows(cur)
+        except sqlite3.OperationalError:
+            like_query = f"%{q}%"
+            cur = conn.execute(
+                "SELECT id, title, summary, tags, version, exported_version,"
+                " created_at, updated_at FROM topics"
+                " WHERE title LIKE ? OR summary LIKE ? ORDER BY updated_at DESC",
+                (like_query, like_query))
+            return _rows(cur)
     else:
         cur = conn.execute(
             "SELECT id, title, summary, tags, version, exported_version,"
             " created_at, updated_at FROM topics ORDER BY updated_at DESC")
-    return _rows(cur)
+        return _rows(cur)
 
 
 def topic_candidates(query_text: str, limit: int = 30) -> list[dict]:
@@ -266,11 +292,18 @@ def all_tags() -> list[str]:
 def delete_topic(topic_id: str) -> None:
     conn = get_conn()
     # 1. 查找并删除所有关联的 captures 以及磁盘上的媒体文件
-    cur = conn.execute("SELECT media_path FROM captures WHERE topic_id=?", (topic_id,))
-    for row in cur.fetchall():
+    cur = conn.execute("SELECT id, media_path FROM captures WHERE topic_id=?", (topic_id,))
+    rows = cur.fetchall()
+    capture_ids = [r["id"] for r in rows]
+    for row in rows:
         if row["media_path"]:
             (config.DATA_DIR / row["media_path"]).unlink(missing_ok=True)
     
+    # 1.5 删除 processing_log 记录
+    if capture_ids:
+        placeholders = ", ".join("?" for _ in capture_ids)
+        conn.execute(f"DELETE FROM processing_log WHERE capture_id IN ({placeholders})", capture_ids)
+
     # 2. 删除 captures 记录
     conn.execute("DELETE FROM captures WHERE topic_id=?", (topic_id,))
     

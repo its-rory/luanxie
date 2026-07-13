@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { compressImage, startRecording, type RecorderHandle } from '../components/Recorder'
 
@@ -14,6 +14,18 @@ export default function CapturePage({ onDone, showToast }: {
   const recRef = useRef<RecorderHandle | null>(null)
   const timerRef = useRef<number>(0)
   const imageInput = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current)
+      }
+      if (recRef.current) {
+        recRef.current.cancel()
+        recRef.current = null
+      }
+    }
+  }, [])
 
   const submitText = async () => {
     if (!text.trim()) return

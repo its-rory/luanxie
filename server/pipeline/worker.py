@@ -8,8 +8,6 @@ import asyncio
 import json
 import traceback
 
-import anthropic
-
 from .. import config, db, events
 from ..models import TopicDecision
 from . import classify as classify_mod
@@ -82,6 +80,8 @@ async def run_merge(capture_id: str, decision: TopicDecision) -> None:
                                 summary=decision.clean_text[:100])
     else:
         topic = db.get_topic(decision.topic_id)
+    if topic is None:
+        raise ValueError(f"Topic not found for action={decision.action}, topic_id={decision.topic_id}, title={decision.new_topic_title}")
     db.update_capture(capture_id, topic_id=topic["id"])
     updated, usage = await asyncio.to_thread(merge_mod.merge, db.get_capture(capture_id), topic)
     db.log(capture_id, "merge", "ok", json.dumps(usage))
@@ -103,12 +103,15 @@ async def _process(capture_id: str) -> None:
         else:
             _set_status(cap["id"], "awaiting_review")
             db.log(cap["id"], "review", "start", "置信度不足,等待用户确认")
-    except (anthropic.RateLimitError, anthropic.InternalServerError,
-            anthropic.APIConnectionError) as e:
-        await _retry_or_fail(capture_id, f"API 暂时性错误: {e}", retryable=True)
     except Exception as e:
-        db.log(capture_id, "error", "error", traceback.format_exc()[-1500:])
-        await _retry_or_fail(capture_id, str(e), retryable=False)
+        import anthropic
+        import openai
+        if isinstance(e, (anthropic.RateLimitError, anthropic.InternalServerError, anthropic.APIConnectionError,
+                          openai.RateLimitError, openai.APIConnectionError, openai.InternalServerError)):
+            await _retry_or_fail(capture_id, f"API 暂时性错误: {e}", retryable=True)
+        else:
+            db.log(capture_id, "error", "error", traceback.format_exc()[-1500:])
+            await _retry_or_fail(capture_id, str(e), retryable=False)
 
 
 async def _retry_or_fail(capture_id: str, error: str, *, retryable: bool) -> None:

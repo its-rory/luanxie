@@ -35,13 +35,20 @@ export async function startRecording(): Promise<RecorderHandle> {
 /* 图片压缩:长边压到 maxEdge,省 token 且识别足够 */
 export async function compressImage(file: File, maxEdge = 1568): Promise<{ blob: Blob; ext: string }> {
   const bitmap = await createImageBitmap(file).catch(() => null)
-  if (!bitmap) return { blob: file, ext: file.name.split('.').pop() || 'jpg' }
+  const origExt = file.name.split('.').pop() || 'jpg'
+  if (!bitmap) return { blob: file, ext: origExt }
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height))
   if (scale === 1 && file.type === 'image/jpeg') return { blob: file, ext: 'jpg' }
   const canvas = document.createElement('canvas')
   canvas.width = Math.round(bitmap.width * scale)
   canvas.height = Math.round(bitmap.height * scale)
-  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  const blob = await new Promise<Blob>((res) => canvas.toBlob((b) => res(b!), 'image/jpeg', 0.85))
+  
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return { blob: file, ext: origExt }
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+
+  if (!canvas.toBlob) return { blob: file, ext: origExt }
+  const blob = await new Promise<Blob | null>((res) => canvas.toBlob((b) => res(b), 'image/jpeg', 0.85))
+  if (!blob) return { blob: file, ext: origExt }
   return { blob, ext: 'jpg' }
 }
