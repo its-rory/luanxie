@@ -17,6 +17,10 @@ async def lifespan(app: FastAPI):
     consumer_task = asyncio.create_task(worker.consumer())
     yield
     consumer_task.cancel()
+    try:
+        await asyncio.wait_for(consumer_task, timeout=5.0)
+    except (asyncio.CancelledError, Exception):
+        pass
 
 
 app = FastAPI(title="乱写", lifespan=lifespan)
@@ -34,6 +38,8 @@ app.include_router(events_route.router, dependencies=[Depends(auth.check_auth)])
 def get_media_file(filename: str, user: dict = Depends(auth.check_auth)):
     import os
     safe_name = os.path.basename(filename)
+    if safe_name.startswith('.'):
+        raise HTTPException(400, "非法文件名")
     file_path = (config.MEDIA_DIR / safe_name).resolve()
     if not file_path.is_relative_to(config.MEDIA_DIR.resolve()) or not file_path.is_file():
         raise HTTPException(404, "文件不存在")

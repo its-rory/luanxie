@@ -99,7 +99,7 @@ export default function App() {
         <span className="sub">丢进来,慢慢长</span>
       </header>
       <main>
-        <ErrorBoundary>
+        <ErrorBoundary key={tab}>
           {tab === 'capture' && <CapturePage onDone={() => { showToast('已收录,后台整理中'); }} showToast={showToast} />}
           {tab === 'inbox' && <InboxPage tick={tick} openTopic={openTopic} showToast={showToast} />}
           {tab === 'review' && (

@@ -7,7 +7,8 @@ from .. import config
 WHISPER_MODEL = "turbo"  # 默认本地模型名，对应 large-v3-turbo
 
 _lock = asyncio.Lock()
-_model_instance = None
+_faster_whisper_model = None
+_openai_whisper_model = None
 
 
 def _ensure_mp3_format(audio_path: str) -> str:
@@ -106,19 +107,17 @@ async def _transcribe_via_api(audio_path: str) -> str:
         mime_type = "audio/mpeg"
 
         with open(target_path, "rb") as f:
-            file_content = f.read()
-
-        files = {
-            "file": (filename, file_content, mime_type)
-        }
-        data = {
-            "model": config.AUDIO_MODEL
-        }
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, headers=headers, files=files, data=data, timeout=300.0)
-            response.raise_for_status()
-            result = response.json()
-            return result["text"].strip()
+            files = {
+                "file": (filename, f, mime_type)
+            }
+            data = {
+                "model": config.AUDIO_MODEL
+            }
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=headers, files=files, data=data, timeout=300.0)
+                response.raise_for_status()
+                result = response.json()
+                return result["text"].strip()
 
 
 def _transcribe_sync(audio_path: str) -> str:
@@ -137,11 +136,12 @@ def _transcribe_sync(audio_path: str) -> str:
     # 2. 尝试导入 faster_whisper
     try:
         from faster_whisper import WhisperModel
-        if _model_instance is None:
+        global _faster_whisper_model
+        if _faster_whisper_model is None:
             # device="auto" 自动检测 cuda (GPU) 或 cpu
             # compute_type="default" 根据设备选择最佳计算精度 (如 float16 / int8 / float32)
-            _model_instance = WhisperModel(WHISPER_MODEL, device="auto", compute_type="default")
-        segments, info = _model_instance.transcribe(audio_path, beam_size=5)
+            _faster_whisper_model = WhisperModel(WHISPER_MODEL, device="auto", compute_type="default")
+        segments, info = _faster_whisper_model.transcribe(audio_path, beam_size=5)
         return "".join(segment.text for segment in segments).strip()
     except ImportError:
         pass
@@ -149,9 +149,10 @@ def _transcribe_sync(audio_path: str) -> str:
     # 3. 尝试导入 openai-whisper 作为最后的备用
     try:
         import whisper
-        if _model_instance is None:
-            _model_instance = whisper.load_model(WHISPER_MODEL)
-        result = _model_instance.transcribe(audio_path)
+        global _openai_whisper_model
+        if _openai_whisper_model is None:
+            _openai_whisper_model = whisper.load_model(WHISPER_MODEL)
+        result = _openai_whisper_model.transcribe(audio_path)
         return result["text"].strip()
     except ImportError:
         pass

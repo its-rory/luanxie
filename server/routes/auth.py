@@ -13,7 +13,7 @@ class LoginRequest(BaseModel):
     password: str
 
 @router.post("/login")
-async def login(payload: LoginRequest, response: Response):
+async def login(payload: LoginRequest, response: Response, request: Request):
     if not hmac.compare_digest(payload.password, config.ADMIN_PASSWORD):
         await asyncio.sleep(2)
         raise HTTPException(status_code=401, detail="密码错误")
@@ -22,12 +22,14 @@ async def login(payload: LoginRequest, response: Response):
     expires_at = time.time() + 7 * 86400  # 7 days
     db.create_session(token, expires_at)
 
-    # Set HTTP-only secure cookie
+    # Set HTTP-only cookie with dynamic secure flag
+    secure_cookie = request.url.scheme == "https"
     response.set_cookie(
         key="session_token",
         value=token,
         httponly=True,
         samesite="lax",
+        secure=secure_cookie,
         path="/",
         max_age=7 * 86400,
     )

@@ -109,19 +109,28 @@ def _rows(cur) -> list[dict]:
 def create_capture(type_: str, raw_text: str | None = None,
                    media_path: str | None = None) -> dict:
     conn = get_conn()
-    cap = {
-        "id": uuid.uuid4().hex[:12],
-        "type": type_,
-        "status": "pending",
-        "raw_text": raw_text,
-        "media_path": media_path,
-        "created_at": now(),
-    }
-    conn.execute(
-        "INSERT INTO captures (id, type, status, raw_text, media_path, created_at)"
-        " VALUES (:id, :type, :status, :raw_text, :media_path, :created_at)", cap)
-    conn.commit()
-    return get_capture(cap["id"])
+    import sqlite3
+    for _ in range(5):
+        cap_id = uuid.uuid4().hex[:12]
+        cap = {
+            "id": cap_id,
+            "type": type_,
+            "status": "pending",
+            "raw_text": raw_text,
+            "media_path": media_path,
+            "created_at": now(),
+        }
+        try:
+            with conn:
+                conn.execute(
+                    "INSERT INTO captures (id, type, status, raw_text, media_path, created_at)"
+                    " VALUES (:id, :type, :status, :raw_text, :media_path, :created_at)", cap)
+            break
+        except sqlite3.IntegrityError:
+            continue
+    else:
+        raise ValueError("Failed to generate a unique capture ID after 5 attempts")
+    return get_capture(cap_id)
 
 
 def get_capture(capture_id: str) -> dict | None:
@@ -155,9 +164,11 @@ def update_capture(capture_id: str, **fields) -> None:
         if k not in allowed:
             raise ValueError(f"Invalid column: {k}")
     conn = get_conn()
-    cols = ", ".join(f"{k}=?" for k in fields)
+    items = list(fields.items())
+    cols = ", ".join(f"{k}=?" for k, _ in items)
+    vals = [v for _, v in items]
     conn.execute(f"UPDATE captures SET {cols} WHERE id=?",
-                 (*fields.values(), capture_id))
+                 (*vals, capture_id))
     conn.commit()
 
 
@@ -368,7 +379,9 @@ def set_setting(key: str, value: str) -> None:
 
 def create_session(token: str, expires_at: float) -> None:
     conn = get_conn()
+    import time
     with conn:
+        conn.execute("DELETE FROM sessions WHERE expires_at < ?", (time.time(),))
         conn.execute("INSERT INTO sessions (token, expires_at) VALUES (?, ?)", (token, expires_at))
 
 

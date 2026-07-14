@@ -11,11 +11,15 @@ export default function TopicsPage({ tick, openTopic }: {
   const [q, setQ] = useState('')
 
   useEffect(() => {
+    let active = true
     setLoading(true)
     api.topics()
-      .then(setTopics)
+      .then(res => { if (active) setTopics(res) })
       .catch(() => {})
-      .finally(() => setLoading(false))
+      .finally(() => { if (active) setLoading(false) })
+    return () => {
+      active = false
+    }
   }, [tick])
 
   const shown = q.trim()

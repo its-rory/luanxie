@@ -1,5 +1,6 @@
 """集中配置:环境变量、路径、模型名。"""
 import os
+import threading
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -79,6 +80,7 @@ _FALLBACK_MAPS = {
 }
 
 _last_env_mtime = 0
+_env_lock = threading.Lock()
 
 def reload_env_if_needed():
     global _last_env_mtime
@@ -87,12 +89,13 @@ def reload_env_if_needed():
         try:
             mtime = env_path.stat().st_mtime
             if mtime != _last_env_mtime:
-                load_dotenv(env_path, override=True)
-                _last_env_mtime = mtime
+                with _env_lock:
+                    if mtime != _last_env_mtime:
+                        load_dotenv(env_path, override=True)
+                        _last_env_mtime = mtime
         except Exception:
             pass
 
-import threading
 _getattr_lock = threading.local()
 
 def __getattr__(name: str):

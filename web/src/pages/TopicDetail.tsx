@@ -168,15 +168,19 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
   const [isEditingTags, setIsEditingTags] = useState(false)
   const [tagInput, setTagInput] = useState('')
 
-  const load = useCallback(() => {
-    api.topic(id).then(setTopic).catch(() => {})
-    api.versions(id).then(setVersions).catch(() => {})
+  const load = useCallback((active = { current: true }) => {
+    api.topic(id).then(res => { if (active.current) setTopic(res); }).catch(() => {})
+    api.versions(id).then(res => { if (active.current) setVersions(res); }).catch(() => {})
   }, [id])
   useEffect(() => {
-    load()
+    const active = { current: true }
+    load(active)
+    return () => {
+      active.current = false
+    }
   }, [load])
 
-  const md = useMemo(() => preprocessWikiLinks(topic?.body_md || ''), [topic])
+  const md = useMemo(() => preprocessWikiLinks(topic?.body_md || ''), [topic?.body_md])
 
   const rollback = async (v: number) => {
     if (!confirm(`回滚到 v${v}?当前内容会存为新版本,可再滚回来。`)) return

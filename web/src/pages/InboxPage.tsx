@@ -15,19 +15,23 @@ export default function InboxPage({ tick, openTopic, showToast }: {
 
   const [editingCapId, setEditingCapId] = useState<string | null>(null)
   const [newTopicTitle, setNewTopicTitle] = useState('')
-  const [reassigning, setReassigning] = useState(false)
+  const [reassigningCapId, setReassigningCapId] = useState<string | null>(null)
 
   useEffect(() => {
+    let active = true
     setLoading(true)
     api.captures()
-      .then(setItems)
+      .then(res => { if (active) setItems(res) })
       .catch(() => {})
-      .finally(() => setLoading(false))
+      .finally(() => { if (active) setLoading(false) })
+    return () => {
+      active = false
+    }
   }, [tick])
 
   const handleReassign = async (id: string) => {
     if (!newTopicTitle.trim()) return
-    setReassigning(true)
+    setReassigningCapId(id)
     try {
       const updated = await api.reassignCapture(id, newTopicTitle.trim())
       setItems((xs) => xs.map((x) => (x.id === id ? updated : x)))
@@ -36,7 +40,7 @@ export default function InboxPage({ tick, openTopic, showToast }: {
     } catch (e) {
       showToast('改派失败: ' + (e as Error).message)
     } finally {
-      setReassigning(false)
+      setReassigningCapId(null)
     }
   }
 
@@ -128,7 +132,7 @@ export default function InboxPage({ tick, openTopic, showToast }: {
               />
               <button
                 className="btn small primary"
-                disabled={reassigning || !newTopicTitle.trim()}
+                disabled={reassigningCapId === c.id || !newTopicTitle.trim()}
                 onClick={() => handleReassign(c.id)}
                 style={{ padding: '4px 10px', height: '28px', fontSize: '11px' }}
               >
@@ -136,7 +140,7 @@ export default function InboxPage({ tick, openTopic, showToast }: {
               </button>
               <button
                 className="btn small ghost"
-                disabled={reassigning}
+                disabled={reassigningCapId === c.id}
                 onClick={() => setEditingCapId(null)}
                 style={{ padding: '4px 10px', height: '28px', fontSize: '11px' }}
               >

@@ -36,11 +36,19 @@ export default function DiffView({ oldText, newText }: { oldText: string; newTex
           const ctx = h.lines.length > 5
             ? [...h.lines.slice(0, 2), `… ${h.lines.length - 4} 行未变 …`, ...h.lines.slice(-2)]
             : h.lines
-          return ctx.map((l, k) => <span key={`${idx}-${k}`} style={{ display: 'block', opacity: 0.55 }}>{l || ' '}</span>)
+          return (
+            <div key={idx}>
+              {ctx.map((l, k) => <span key={k} style={{ display: 'block', opacity: 0.55 }}>{l || ' '}</span>)}
+            </div>
+          )
         }
-        return h.lines.map((l, k) => (
-          <span key={`${idx}-${k}`} className={h.type}>{h.type === 'add' ? '+ ' : '- '}{l || ' '}</span>
-        ))
+        return (
+          <div key={idx}>
+            {h.lines.map((l, k) => (
+              <span key={k} className={h.type} style={{ display: 'block' }}>{h.type === 'add' ? '+ ' : '- '}{l || ' '}</span>
+            ))}
+          </div>
+        )
       })}
     </div>
   )

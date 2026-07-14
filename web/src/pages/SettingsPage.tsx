@@ -145,19 +145,6 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
       loadHealth()
     } catch (e: any) {
       showToast(e.message || '部分接口验证未通过，请检查配置')
-      // If server returns specific errors, populate them in test states
-      if (e.message && typeof e.message === 'object') {
-        const errors = e.message.errors || {}
-        setTestStates(prev => {
-          const next = { ...prev }
-          for (const task of ['text', 'image', 'audio', 'merge']) {
-            if (errors[task]) {
-              next[task] = { status: 'error', message: errors[task] }
-            }
-          }
-          return next
-        })
-      }
     } finally {
       setSaving(false)
     }
@@ -167,7 +154,9 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     setSettings(prev => ({ ...prev, [key]: val }))
     // Reset test state for this task when edit occurs
     const task = key.split('_')[0].toLowerCase()
-    setTestStates(prev => ({ ...prev, [task]: { status: 'idle', message: '' } }))
+    if (['text', 'image', 'audio', 'merge'].includes(task)) {
+      setTestStates(prev => ({ ...prev, [task]: { status: 'idle', message: '' } }))
+    }
   }
 
   return (
