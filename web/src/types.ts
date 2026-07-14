@@ -14,6 +14,7 @@ export interface Capture {
   created_at: string
   logs?: LogEntry[]
   version?: number
+  title?: string | null
 }
 
 export interface CaptureVersion {
@@ -24,6 +25,7 @@ export interface CaptureVersion {
   raw_text: string | null
   transcript: string | null
   media_path: string | null
+  title?: string | null
   created_at: string
 }
 

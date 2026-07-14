@@ -223,6 +223,7 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
   const [savingCapture, setSavingCapture] = useState(false)
   const [activeCapVersions, setActiveCapVersions] = useState<Record<string, { versions: CaptureVersion[]; show: boolean }>>({})
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [editCapTitle, setEditCapTitle] = useState('')
 
   const load = useCallback((active = { current: true }) => {
     api.topic(id).then(res => { if (active.current) setTopic(res); }).catch(() => {})
@@ -322,6 +323,7 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
 
   const handleStartEditCapture = (cap: Capture) => {
     setEditingCaptureId(cap.id)
+    setEditCapTitle(cap.title || '')
     setEditCapClean(cap.clean_text || '')
     setEditCapRaw(cap.raw_text || cap.transcript || '')
   }
@@ -333,8 +335,9 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
   const handleSaveCapture = async (cap: Capture) => {
     setSavingCapture(true)
     try {
-      const payload: { clean_text: string; raw_text?: string; transcript?: string } = {
-        clean_text: editCapClean.trim()
+      const payload: { clean_text: string; raw_text?: string; transcript?: string; title: string } = {
+        clean_text: editCapClean.trim(),
+        title: editCapTitle.trim()
       }
       if (cap.type === 'audio') {
         payload.transcript = editCapRaw.trim()
@@ -640,7 +643,7 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                 {/* Sub-card header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontWeight: 'bold', fontSize: '14px', color: 'var(--ink)' }}>子卡片 #{idx + 1}</span>
+                    <span style={{ fontWeight: 'bold', fontSize: '14px', color: 'var(--ink)' }}>子卡片 #{idx + 1}{cap.title ? ` : ${cap.title}` : ''}</span>
                     <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--paper-deep)', border: '1px solid var(--line)', color: 'var(--ink-soft)' }}>
                       {typeLabel}
                     </span>
@@ -678,6 +681,26 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                 {/* Sub-card body */}
                 {isEditingCap ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div>
+                      <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--ink-soft)', display: 'block', marginBottom: '3px' }}>子卡片标题 (Title)</label>
+                      <input
+                        type="text"
+                        value={editCapTitle}
+                        onChange={(e) => setEditCapTitle(e.target.value)}
+                        style={{
+                          width: '100%',
+                          background: 'var(--paper-deep)',
+                          color: 'var(--ink)',
+                          border: '1px solid var(--line)',
+                          borderRadius: '8px',
+                          padding: '6px 8px',
+                          fontFamily: 'inherit',
+                          fontSize: '13px',
+                          marginBottom: '8px'
+                        }}
+                        placeholder="输入子卡片标题..."
+                      />
+                    </div>
                     <div>
                       <label style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--ink-soft)', display: 'block', marginBottom: '3px' }}>AI解析 (Clean Text)</label>
                       <textarea

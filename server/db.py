@@ -101,6 +101,12 @@ def get_conn() -> sqlite3.Connection:
                     conn.commit()
                 except sqlite3.OperationalError:
                     pass
+                # Migration: add title to captures if it doesn't exist
+                try:
+                    conn.execute("ALTER TABLE captures ADD COLUMN title TEXT")
+                    conn.commit()
+                except sqlite3.OperationalError:
+                    pass
                 # Migration: create capture_versions table
                 conn.execute("""
                 CREATE TABLE IF NOT EXISTS capture_versions (
@@ -111,10 +117,17 @@ def get_conn() -> sqlite3.Connection:
                   raw_text      TEXT,
                   transcript    TEXT,
                   media_path    TEXT,
+                  title         TEXT,
                   created_at    TEXT NOT NULL
                 )
                 """)
                 conn.commit()
+                # Migration: add title to capture_versions if it doesn't exist (for existing tables)
+                try:
+                    conn.execute("ALTER TABLE capture_versions ADD COLUMN title TEXT")
+                    conn.commit()
+                except sqlite3.OperationalError:
+                    pass
                 _schema_initialized = True
         _local.conn = conn
     return conn
@@ -178,7 +191,7 @@ def update_capture(capture_id: str, **fields) -> None:
     allowed = {
         "type", "status", "raw_text", "media_path", "transcript", "clean_text",
         "topic_id", "confidence", "suggestion", "error", "retry_count", "created_at",
-        "processed_at"
+        "processed_at", "title"
     }
     for k in fields:
         if k not in allowed:
@@ -454,7 +467,8 @@ def update_topic_summary(topic_id: str, summary: str) -> None:
 
 
 def update_capture_content(capture_id: str, *, clean_text: str, raw_text: str | None = None,
-                           transcript: str | None = None, media_path: str | None = None) -> dict:
+                           transcript: str | None = None, media_path: str | None = None,
+                           title: str | None = None) -> dict:
     conn = get_conn()
     old = get_capture(capture_id)
     if old is None:
@@ -463,15 +477,15 @@ def update_capture_content(capture_id: str, *, clean_text: str, raw_text: str | 
     with conn:
         # Snapshot the old version
         conn.execute(
-            "INSERT INTO capture_versions (capture_id, version, clean_text, raw_text, transcript, media_path, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (capture_id, old.get("version", 0), old.get("clean_text") or "", old.get("raw_text"), old.get("transcript"), old.get("media_path"), ts)
+            "INSERT INTO capture_versions (capture_id, version, clean_text, raw_text, transcript, media_path, title, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (capture_id, old.get("version", 0), old.get("clean_text") or "", old.get("raw_text"), old.get("transcript"), old.get("media_path"), old.get("title"), ts)
         )
         # Update current capture
         conn.execute(
-            "UPDATE captures SET clean_text=?, raw_text=?, transcript=?, media_path=?, version=version+1"
+            "UPDATE captures SET clean_text=?, raw_text=?, transcript=?, media_path=?, title=?, version=version+1"
             " WHERE id=?",
-            (clean_text, raw_text, transcript, media_path, capture_id)
+            (clean_text, raw_text, transcript, media_path, title if title is not None else old.get("title"), capture_id)
         )
     return get_capture(capture_id)
 
@@ -501,13 +515,13 @@ def rollback_capture(capture_id: str, version: int) -> dict:
     ts = now()
     with conn:
         conn.execute(
-            "INSERT INTO capture_versions (capture_id, version, clean_text, raw_text, transcript, media_path, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (capture_id, old.get("version", 0), old.get("clean_text") or "", old.get("raw_text"), old.get("transcript"), old.get("media_path"), ts)
+            "INSERT INTO capture_versions (capture_id, version, clean_text, raw_text, transcript, media_path, title, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (capture_id, old.get("version", 0), old.get("clean_text") or "", old.get("raw_text"), old.get("transcript"), old.get("media_path"), old.get("title"), ts)
         )
         conn.execute(
-            "UPDATE captures SET clean_text=?, raw_text=?, transcript=?, media_path=?, version=version+1"
+            "UPDATE captures SET clean_text=?, raw_text=?, transcript=?, media_path=?, title=?, version=version+1"
             " WHERE id=?",
-            (snap["clean_text"], snap["raw_text"], snap["transcript"], snap["media_path"], capture_id)
+            (snap["clean_text"], snap["raw_text"], snap["transcript"], snap["media_path"], snap["title"], capture_id)
         )
     return get_capture(capture_id)

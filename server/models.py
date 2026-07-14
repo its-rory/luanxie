@@ -40,3 +40,4 @@ class CapturePatch(BaseModel):
     clean_text: str | None = None
     raw_text: str | None = None
     transcript: str | None = None
+    title: str | None = None

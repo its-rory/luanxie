@@ -104,7 +104,8 @@ def patch_capture(capture_id: str, patch: CapturePatch):
         clean_text=patch.clean_text if patch.clean_text is not None else (cap["clean_text"] or ""),
         raw_text=patch.raw_text if patch.raw_text is not None else cap["raw_text"],
         transcript=patch.transcript if patch.transcript is not None else cap["transcript"],
-        media_path=cap["media_path"]
+        media_path=cap["media_path"],
+        title=patch.title if patch.title is not None else cap["title"]
     )
     return updated
 

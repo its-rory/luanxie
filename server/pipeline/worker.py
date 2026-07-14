@@ -70,6 +70,36 @@ async def _classify_stage(cap: dict) -> tuple[dict, TopicDecision]:
     return db.get_capture(cap["id"]), decision
 
 
+from pydantic import BaseModel, Field
+from .llm import call_structured
+
+class NamingDecision(BaseModel):
+    sub_card_title: str = Field(description="A professional, very short title for this specific capture/message, 4 to 12 chars.")
+    new_topic_title: str | None = Field(None, description="A general category short title for a new topic, 2 to 8 chars. Keep None if not creating a new topic.")
+
+async def generate_titles(clean_text: str, is_new_topic: bool) -> tuple[str, str | None]:
+    system_prompt = """你是一个专业的知识库整理助手。用户提供了一项新条目的AI解析内容。
+请为这项条目生成最合适的名词短语命名：
+1. **sub_card_title**：代表此项记录（子卡片）的具体标题，4~12字（如“一二期分拣机高度差”）。
+2. **new_topic_title**：仅当用户开辟全新大主题时才需要（如“分拣系统规划”），代表大类目录，2~8字。如果不是新主题，则设为 null。"""
+    
+    user_prompt = f"内容如下：\n{clean_text}\n\n是否需要开辟新主题：{'是' if is_new_topic else '否'}"
+    
+    res, usage = await asyncio.to_thread(
+        call_structured,
+        model=config.MERGE_MODEL,
+        system=system_prompt,
+        content=user_prompt,
+        schema=NamingDecision,
+        tool_name="submit_naming",
+        tool_description="Submit the generated sub-card title and optional new topic title",
+        provider=config.MERGE_PROVIDER_NAME,
+        api_key=config.MERGE_API_KEY,
+        base_url=config.MERGE_BASE_URL
+    )
+    return res.sub_card_title.strip(), res.new_topic_title.strip() if res.new_topic_title else None
+
+
 _merge_lock = asyncio.Lock()
 
 
@@ -78,18 +108,38 @@ async def run_merge(capture_id: str, decision: TopicDecision) -> None:
     async with _merge_lock:
         cap = _set_status(capture_id, "merging")
         db.log(capture_id, "merge", "start")
+        
+        # 1. 采用合并 AI 的这个 AI 大模型，自动给子卡片和主题卡片命名
+        sub_title = None
+        new_topic_title = None
+        try:
+            sub_title, new_topic_title = await generate_titles(decision.clean_text, decision.action == "new")
+        except Exception as e:
+            db.log(capture_id, "merge", "warn", f"合并 AI 自动命名失败(已退回默认命名): {e}")
+            
+        if not sub_title:
+            first_line = decision.clean_text.split('\n')[0].strip().replace('- ', '')
+            sub_title = first_line[:12] + ("..." if len(first_line) > 12 else "")
+            if not sub_title:
+                sub_title = "未命名记录"
+                
+        if decision.action == "new" and not new_topic_title:
+            new_topic_title = decision.new_topic_title or "新主题"
+
         if decision.action == "new":
-            topic = db.create_topic(decision.new_topic_title,
+            topic = db.create_topic(new_topic_title,
                                     summary=decision.clean_text[:100])
         else:
             topic = db.get_topic(decision.topic_id)
             if topic:
                 db.update_topic_summary(topic["id"], decision.clean_text[:100])
         if topic is None:
-            raise ValueError(f"Topic not found for action={decision.action}, topic_id={decision.topic_id}, title={decision.new_topic_title}")
-        db.update_capture(capture_id, topic_id=topic["id"])
+            raise ValueError(f"Topic not found for action={decision.action}, topic_id={decision.topic_id}, title={new_topic_title}")
         
-        db.log(capture_id, "merge", "ok", json.dumps({"status": "associated"}))
+        # 将子卡片关联到主题，并存入自动生成的子卡片标题
+        db.update_capture(capture_id, topic_id=topic["id"], title=sub_title)
+        
+        db.log(capture_id, "merge", "ok", json.dumps({"status": "associated", "sub_title": sub_title}))
         _set_status(capture_id, "done", processed_at=db.now())
         events.publish({"kind": "topic", "id": topic["id"], "title": topic["title"]})
 
