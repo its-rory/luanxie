@@ -4,7 +4,7 @@ import json
 from fastapi import APIRouter, HTTPException
 
 from .. import db
-from ..models import TopicPatch
+from ..models import TopicPatch, CapturePatch
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
@@ -81,4 +81,55 @@ def delete_topic(topic_id: str):
     if not topic:
         raise HTTPException(404, "主题不存在")
     db.delete_topic(topic_id)
+    return {"ok": True}
+
+
+# ---------- sub-card captures endpoints ----------
+
+@router.get("/{topic_id}/captures")
+def get_topic_captures(topic_id: str):
+    if not db.get_topic(topic_id):
+        raise HTTPException(404, "主题不存在")
+    return db.list_captures_by_topic(topic_id)
+
+
+@router.patch("/captures/{capture_id}")
+def patch_capture(capture_id: str, patch: CapturePatch):
+    cap = db.get_capture(capture_id)
+    if not cap:
+        raise HTTPException(404, "子卡片不存在")
+        
+    updated = db.update_capture_content(
+        capture_id,
+        clean_text=patch.clean_text if patch.clean_text is not None else (cap["clean_text"] or ""),
+        raw_text=patch.raw_text if patch.raw_text is not None else cap["raw_text"],
+        transcript=patch.transcript if patch.transcript is not None else cap["transcript"],
+        media_path=cap["media_path"]
+    )
+    return updated
+
+
+@router.get("/captures/{capture_id}/versions")
+def list_capture_versions(capture_id: str):
+    if not db.get_capture(capture_id):
+        raise HTTPException(404, "子卡片不存在")
+    return db.list_capture_versions(capture_id)
+
+
+@router.post("/captures/{capture_id}/rollback/{version}")
+def rollback_capture(capture_id: str, version: int):
+    if not db.get_capture(capture_id):
+        raise HTTPException(404, "子卡片不存在")
+    try:
+        updated = db.rollback_capture(capture_id, version)
+        return updated
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.delete("/captures/{capture_id}")
+def delete_capture_route(capture_id: str):
+    if not db.get_capture(capture_id):
+        raise HTTPException(404, "子卡片不存在")
+    db.delete_capture(capture_id)
     return {"ok": True}

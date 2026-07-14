@@ -84,14 +84,15 @@ async def run_merge(capture_id: str, decision: TopicDecision) -> None:
                                     summary=decision.clean_text[:100])
         else:
             topic = db.get_topic(decision.topic_id)
+            if topic:
+                db.update_topic_summary(topic["id"], decision.clean_text[:100])
         if topic is None:
             raise ValueError(f"Topic not found for action={decision.action}, topic_id={decision.topic_id}, title={decision.new_topic_title}")
         db.update_capture(capture_id, topic_id=topic["id"])
-        updated, usage = await asyncio.to_thread(merge_mod.merge, db.get_capture(capture_id), topic)
-        db.log(capture_id, "merge", "ok", json.dumps(usage))
+        
+        db.log(capture_id, "merge", "ok", json.dumps({"status": "associated"}))
         _set_status(capture_id, "done", processed_at=db.now())
-        events.publish({"kind": "topic", "id": updated["id"], "title": updated["title"],
-                        "version": updated["version"]})
+        events.publish({"kind": "topic", "id": topic["id"], "title": topic["title"]})
 
 
 async def _process(capture_id: str) -> None:

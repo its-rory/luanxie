@@ -13,6 +13,18 @@ export interface Capture {
   error: string | null
   created_at: string
   logs?: LogEntry[]
+  version?: number
+}
+
+export interface CaptureVersion {
+  id: number
+  capture_id: string
+  version: number
+  clean_text: string
+  raw_text: string | null
+  transcript: string | null
+  media_path: string | null
+  created_at: string
 }
 
 export interface Suggestion {

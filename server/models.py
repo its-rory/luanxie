@@ -34,3 +34,9 @@ class TopicPatch(BaseModel):
     summary: str | None = None
     body_md: str | None = None
     tags: list[str] | None = None
+
+
+class CapturePatch(BaseModel):
+    clean_text: str | None = None
+    raw_text: str | None = None
+    transcript: str | None = None

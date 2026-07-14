@@ -95,6 +95,26 @@ def get_conn() -> sqlite3.Connection:
         with _schema_lock:
             if not _schema_initialized:
                 conn.executescript(SCHEMA)
+                # Migration: add version to captures if it doesn't exist
+                try:
+                    conn.execute("ALTER TABLE captures ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
+                    conn.commit()
+                except sqlite3.OperationalError:
+                    pass
+                # Migration: create capture_versions table
+                conn.execute("""
+                CREATE TABLE IF NOT EXISTS capture_versions (
+                  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                  capture_id    TEXT NOT NULL REFERENCES captures(id),
+                  version       INTEGER NOT NULL,
+                  clean_text    TEXT NOT NULL,
+                  raw_text      TEXT,
+                  transcript    TEXT,
+                  media_path    TEXT,
+                  created_at    TEXT NOT NULL
+                )
+                """)
+                conn.commit()
                 _schema_initialized = True
         _local.conn = conn
     return conn
@@ -174,8 +194,16 @@ def update_capture(capture_id: str, **fields) -> None:
 
 def delete_capture(capture_id: str) -> None:
     conn = get_conn()
-    conn.execute("DELETE FROM captures WHERE id=?", (capture_id,))
-    conn.commit()
+    cap = get_capture(capture_id)
+    with conn:
+        conn.execute("DELETE FROM processing_log WHERE capture_id=?", (capture_id,))
+        conn.execute("DELETE FROM capture_versions WHERE capture_id=?", (capture_id,))
+        conn.execute("DELETE FROM captures WHERE id=?", (capture_id,))
+    if cap and cap.get("media_path"):
+        try:
+            (config.DATA_DIR / cap["media_path"]).unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def pending_captures() -> list[dict]:
@@ -404,3 +432,82 @@ def delete_session(token: str) -> None:
     conn = get_conn()
     with conn:
         conn.execute("DELETE FROM sessions WHERE token=?", (token,))
+
+
+# ---------- sub-card captures CRUD ----------
+
+def list_captures_by_topic(topic_id: str) -> list[dict]:
+    cur = get_conn().execute(
+        "SELECT * FROM captures WHERE topic_id=? ORDER BY created_at ASC", (topic_id,)
+    )
+    return _rows(cur)
+
+
+def update_topic_summary(topic_id: str, summary: str) -> None:
+    conn = get_conn()
+    ts = now()
+    with conn:
+        conn.execute(
+            "UPDATE topics SET summary=?, updated_at=? WHERE id=?",
+            (summary, ts, topic_id)
+        )
+
+
+def update_capture_content(capture_id: str, *, clean_text: str, raw_text: str | None = None,
+                           transcript: str | None = None, media_path: str | None = None) -> dict:
+    conn = get_conn()
+    old = get_capture(capture_id)
+    if old is None:
+        raise ValueError(f"Capture with id '{capture_id}' not found")
+    ts = now()
+    with conn:
+        # Snapshot the old version
+        conn.execute(
+            "INSERT INTO capture_versions (capture_id, version, clean_text, raw_text, transcript, media_path, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (capture_id, old.get("version", 0), old.get("clean_text") or "", old.get("raw_text"), old.get("transcript"), old.get("media_path"), ts)
+        )
+        # Update current capture
+        conn.execute(
+            "UPDATE captures SET clean_text=?, raw_text=?, transcript=?, media_path=?, version=version+1"
+            " WHERE id=?",
+            (clean_text, raw_text, transcript, media_path, capture_id)
+        )
+    return get_capture(capture_id)
+
+
+def list_capture_versions(capture_id: str) -> list[dict]:
+    cur = get_conn().execute(
+        "SELECT * FROM capture_versions WHERE capture_id=? ORDER BY version DESC",
+        (capture_id,)
+    )
+    return _rows(cur)
+
+
+def rollback_capture(capture_id: str, version: int) -> dict:
+    conn = get_conn()
+    old = get_capture(capture_id)
+    if old is None:
+        raise ValueError(f"Capture with id '{capture_id}' not found")
+        
+    row = conn.execute(
+        "SELECT * FROM capture_versions WHERE capture_id=? AND version=?",
+        (capture_id, version)
+    ).fetchone()
+    if not row:
+        raise ValueError(f"Capture version {version} not found")
+    snap = dict(row)
+    
+    ts = now()
+    with conn:
+        conn.execute(
+            "INSERT INTO capture_versions (capture_id, version, clean_text, raw_text, transcript, media_path, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (capture_id, old.get("version", 0), old.get("clean_text") or "", old.get("raw_text"), old.get("transcript"), old.get("media_path"), ts)
+        )
+        conn.execute(
+            "UPDATE captures SET clean_text=?, raw_text=?, transcript=?, media_path=?, version=version+1"
+            " WHERE id=?",
+            (snap["clean_text"], snap["raw_text"], snap["transcript"], snap["media_path"], capture_id)
+        )
+    return get_capture(capture_id)
