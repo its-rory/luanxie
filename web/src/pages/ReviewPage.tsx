@@ -59,6 +59,16 @@ export default function ReviewPage({ tick, onDecided, showToast }: {
         return (
           <div className="card review-card" key={c.id}>
             <div className="quote">{s?.clean_text || c.raw_text}</div>
+            {c.type === 'audio' && c.media_path && (
+              <div style={{ marginTop: '6px', marginBottom: '8px' }}>
+                <audio src={`/${c.media_path}`} controls style={{ width: '100%', height: '32px', display: 'block' }} />
+              </div>
+            )}
+            {c.type === 'image' && c.media_path && (
+              <div style={{ marginTop: '6px', marginBottom: '8px' }}>
+                <img src={`/${c.media_path}`} alt="图片" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px', display: 'block', objectFit: 'contain' }} />
+              </div>
+            )}
             <div className="verdict">
               AI 建议:{s?.action === 'new'
                 ? <>开新主题 <b>「{s.new_topic_title}」</b></>

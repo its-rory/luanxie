@@ -37,6 +37,31 @@ async def create_capture(type: str = Form(...), text: str | None = Form(None),
         name = f"{uuid.uuid4().hex[:12]}{suffix}"
         dest = config.MEDIA_DIR / name
         dest.write_bytes(content)
+
+        if type == "audio":
+            out_name = f"{uuid.uuid4().hex[:12]}.mp3"
+            out_dest = config.MEDIA_DIR / out_name
+            import subprocess
+            try:
+                subprocess.run(
+                    [
+                        "ffmpeg", "-y", "-i", str(dest),
+                        "-acodec", "libmp3lame",
+                        "-ar", "16000",
+                        "-ac", "1",
+                        "-ab", "64k",
+                        str(out_dest)
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=True
+                )
+                dest.unlink(missing_ok=True)
+                name = out_name
+            except Exception:
+                # Fallback to original file if ffmpeg transcoding fails
+                pass
+
         cap = db.create_capture(type, media_path=f"media/{name}")
     else:
         raise HTTPException(400, "type 必须是 text/audio/image")

@@ -2,7 +2,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -28,6 +28,16 @@ app.include_router(topics.router, dependencies=[Depends(auth.check_auth)])
 app.include_router(review.router, dependencies=[Depends(auth.check_auth)])
 app.include_router(settings.router, dependencies=[Depends(auth.check_auth)])
 app.include_router(events_route.router, dependencies=[Depends(auth.check_auth)])
+
+
+@app.get("/media/{filename}")
+def get_media_file(filename: str, user: dict = Depends(auth.check_auth)):
+    import os
+    safe_name = os.path.basename(filename)
+    file_path = (config.MEDIA_DIR / safe_name).resolve()
+    if not file_path.is_relative_to(config.MEDIA_DIR.resolve()) or not file_path.is_file():
+        raise HTTPException(404, "文件不存在")
+    return FileResponse(file_path)
 
 
 @app.get("/api/health")

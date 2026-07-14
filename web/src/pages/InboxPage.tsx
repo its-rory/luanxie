@@ -47,6 +47,16 @@ export default function InboxPage({ tick, openTopic, showToast }: {
             <span className="type-glyph">{TYPE_GLYPH[c.type]} · </span>
             {c.clean_text || c.transcript || c.raw_text || (c.type === 'image' ? '(图片,待识别)' : '(音频,待转写)')}
           </div>
+          {c.type === 'audio' && c.media_path && (
+            <div style={{ marginTop: '6px', marginBottom: '8px' }}>
+              <audio src={`/${c.media_path}`} controls style={{ width: '100%', height: '32px', display: 'block' }} />
+            </div>
+          )}
+          {c.type === 'image' && c.media_path && (
+            <div style={{ marginTop: '6px', marginBottom: '8px' }}>
+              <img src={`/${c.media_path}`} alt="图片" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px', display: 'block', objectFit: 'contain' }} />
+            </div>
+          )}
           <div className="meta">
             <StatusBadge status={c.status} />
             {c.status === 'done' && c.topic_id && (

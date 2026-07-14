@@ -4,9 +4,96 @@ import { api } from '../api'
 import type { Topic, TopicVersion } from '../types'
 import DiffView from '../components/DiffView'
 
-/* 把 [[双链]] 预处理成可点击的占位链接 */
+/* 把 [[双链]] 和 ^cap-xxxx 预处理成可点击的占位链接 */
 function preprocessWikiLinks(md: string): string {
-  return md.replace(/\[\[([^\]]+)\]\]/g, (_, title) => `[${title}](#wiki:${encodeURIComponent(title)})`)
+  let res = md.replace(/\[\[([^\]]+)\]\]/g, (_, title) => `[${title}](#wiki:${encodeURIComponent(title)})`)
+  res = res.replace(/\^cap-([a-f0-9]+)/gi, (_, capId) => `[🔊 听原音](#audio-play:${capId})`)
+  return res
+}
+
+function AudioPlayButton({ capId }: { capId: string }) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [audio] = useState(() => new Audio())
+  const [type, setType] = useState<'audio' | 'image' | 'text' | null>(null)
+
+  const handlePlay = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    if (type === 'image' && audioUrl) {
+      window.open(audioUrl, '_blank')
+      return
+    }
+
+    if (audioUrl && type === 'audio') {
+      if (playing) {
+        audio.pause()
+        setPlaying(false)
+      } else {
+        audio.play().then(() => setPlaying(true)).catch(() => {})
+      }
+      return
+    }
+
+    setLoading(true)
+    try {
+      const cap = await api.capture(capId)
+      if (cap && cap.media_path) {
+        const url = `/${cap.media_path}`
+        setType(cap.type)
+        setAudioUrl(url)
+        if (cap.type === 'audio') {
+          audio.src = url
+          audio.play().then(() => setPlaying(true)).catch(() => {})
+          audio.onended = () => {
+            setPlaying(false)
+          }
+        } else if (cap.type === 'image') {
+          window.open(url, '_blank')
+        } else {
+          setError(true)
+        }
+      } else {
+        setError(true)
+      }
+    } catch {
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      audio.pause()
+    }
+  }, [audio])
+
+  if (error) return <span style={{ color: 'var(--ink-faint)', fontSize: '11px', marginLeft: '6px' }}>(无原件)</span>
+  if (loading) return <span style={{ color: 'var(--ink-soft)', fontSize: '11px', marginLeft: '6px' }}>加载中…</span>
+
+  return (
+    <button
+      onClick={handlePlay}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        background: 'none',
+        border: 'none',
+        padding: '0 4px',
+        color: playing ? 'var(--primary)' : 'var(--primary-soft)',
+        cursor: 'pointer',
+        fontSize: '11px',
+        fontFamily: 'inherit',
+        textDecoration: 'underline'
+      }}
+    >
+      {playing ? '⏸ 暂停' : type === 'image' ? '🖼️ 看原图' : '🔊 听原音'}
+    </button>
+  )
 }
 
 /* 分割主题正文为 AI解析 和 记录轨迹 内容 */
@@ -196,6 +283,10 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                       [[{children}]]
                     </span>
                   )
+                }
+                if (href?.startsWith('#audio-play:')) {
+                  const capId = href.slice(12)
+                  return <AudioPlayButton capId={capId} />
                 }
                 return <a href={href} target="_blank" rel="noreferrer">{children}</a>
               },
