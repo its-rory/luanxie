@@ -1,3 +1,5 @@
+import hmac
+import asyncio
 import secrets
 import time
 from fastapi import APIRouter, HTTPException, Response, Cookie, Request
@@ -11,10 +13,9 @@ class LoginRequest(BaseModel):
     password: str
 
 @router.post("/login")
-def login(payload: LoginRequest, response: Response):
-    # If no password is set in config, consider it authenticated or error?
-    # Usually ADMIN_PASSWORD defaults to "admin"
-    if payload.password != config.ADMIN_PASSWORD:
+async def login(payload: LoginRequest, response: Response):
+    if not hmac.compare_digest(payload.password, config.ADMIN_PASSWORD):
+        await asyncio.sleep(2)
         raise HTTPException(status_code=401, detail="密码错误")
 
     token = secrets.token_hex(32)

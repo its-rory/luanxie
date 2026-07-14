@@ -71,23 +71,27 @@ async def _classify_stage(cap: dict) -> tuple[dict, TopicDecision]:
     return db.get_capture(cap["id"]), decision
 
 
+_merge_lock = asyncio.Lock()
+
+
 async def run_merge(capture_id: str, decision: TopicDecision) -> None:
     """merge 阶段。也被 review 批准路径直接调用。"""
-    cap = _set_status(capture_id, "merging")
-    db.log(capture_id, "merge", "start")
-    if decision.action == "new":
-        topic = db.create_topic(decision.new_topic_title,
-                                summary=decision.clean_text[:100])
-    else:
-        topic = db.get_topic(decision.topic_id)
-    if topic is None:
-        raise ValueError(f"Topic not found for action={decision.action}, topic_id={decision.topic_id}, title={decision.new_topic_title}")
-    db.update_capture(capture_id, topic_id=topic["id"])
-    updated, usage = await asyncio.to_thread(merge_mod.merge, db.get_capture(capture_id), topic)
-    db.log(capture_id, "merge", "ok", json.dumps(usage))
-    _set_status(capture_id, "done", processed_at=db.now())
-    events.publish({"kind": "topic", "id": updated["id"], "title": updated["title"],
-                    "version": updated["version"]})
+    async with _merge_lock:
+        cap = _set_status(capture_id, "merging")
+        db.log(capture_id, "merge", "start")
+        if decision.action == "new":
+            topic = db.create_topic(decision.new_topic_title,
+                                    summary=decision.clean_text[:100])
+        else:
+            topic = db.get_topic(decision.topic_id)
+        if topic is None:
+            raise ValueError(f"Topic not found for action={decision.action}, topic_id={decision.topic_id}, title={decision.new_topic_title}")
+        db.update_capture(capture_id, topic_id=topic["id"])
+        updated, usage = await asyncio.to_thread(merge_mod.merge, db.get_capture(capture_id), topic)
+        db.log(capture_id, "merge", "ok", json.dumps(usage))
+        _set_status(capture_id, "done", processed_at=db.now())
+        events.publish({"kind": "topic", "id": updated["id"], "title": updated["title"],
+                        "version": updated["version"]})
 
 
 async def _process(capture_id: str) -> None:
@@ -108,10 +112,22 @@ async def _process(capture_id: str) -> None:
             _set_status(cap["id"], "awaiting_review")
             db.log(cap["id"], "review", "start", f"置信度不足 ({decision.confidence} < {threshold_str}), 等待用户确认")
     except Exception as e:
-        import anthropic
-        import openai
-        if isinstance(e, (anthropic.RateLimitError, anthropic.InternalServerError, anthropic.APIConnectionError,
-                          openai.RateLimitError, openai.APIConnectionError, openai.InternalServerError)):
+        is_api_err = False
+        try:
+            import anthropic
+            if isinstance(e, (anthropic.RateLimitError, anthropic.InternalServerError, anthropic.APIConnectionError)):
+                is_api_err = True
+        except ImportError:
+            pass
+
+        try:
+            import openai
+            if isinstance(e, (openai.RateLimitError, openai.APIConnectionError, openai.InternalServerError)):
+                is_api_err = True
+        except ImportError:
+            pass
+
+        if is_api_err:
             await _retry_or_fail(capture_id, f"API 暂时性错误: {e}", retryable=True)
         else:
             db.log(capture_id, "error", "error", traceback.format_exc()[-1500:])

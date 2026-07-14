@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../api'
 import type { Topic, TopicVersion } from '../types'
@@ -16,8 +16,19 @@ function AudioPlayButton({ capId }: { capId: string }) {
   const [error, setError] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [playing, setPlaying] = useState(false)
-  const [audio] = useState(() => new Audio())
   const [type, setType] = useState<'audio' | 'image' | 'text' | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  const getAudio = () => {
+    if (!audioRef.current) {
+      const audio = new Audio()
+      audio.onplay = () => setPlaying(true)
+      audio.onpause = () => setPlaying(false)
+      audio.onended = () => setPlaying(false)
+      audioRef.current = audio
+    }
+    return audioRef.current
+  }
 
   const handlePlay = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -29,11 +40,11 @@ function AudioPlayButton({ capId }: { capId: string }) {
     }
 
     if (audioUrl && type === 'audio') {
+      const audio = getAudio()
       if (playing) {
         audio.pause()
-        setPlaying(false)
       } else {
-        audio.play().then(() => setPlaying(true)).catch(() => {})
+        audio.play().catch(() => {})
       }
       return
     }
@@ -46,11 +57,9 @@ function AudioPlayButton({ capId }: { capId: string }) {
         setType(cap.type)
         setAudioUrl(url)
         if (cap.type === 'audio') {
+          const audio = getAudio()
           audio.src = url
-          audio.play().then(() => setPlaying(true)).catch(() => {})
-          audio.onended = () => {
-            setPlaying(false)
-          }
+          audio.play().catch(() => {})
         } else if (cap.type === 'image') {
           window.open(url, '_blank')
         } else {
@@ -68,9 +77,18 @@ function AudioPlayButton({ capId }: { capId: string }) {
 
   useEffect(() => {
     return () => {
-      audio.pause()
+      if (audioRef.current) {
+        const audio = audioRef.current
+        audio.pause()
+        audio.onplay = null
+        audio.onpause = null
+        audio.onended = null
+        audio.removeAttribute('src')
+        audio.load()
+        audioRef.current = null
+      }
     }
-  }, [audio])
+  }, [])
 
   if (error) return <span style={{ color: 'var(--ink-faint)', fontSize: '11px', marginLeft: '6px' }}>(无原件)</span>
   if (loading) return <span style={{ color: 'var(--ink-soft)', fontSize: '11px', marginLeft: '6px' }}>加载中…</span>
@@ -150,11 +168,13 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
   const [isEditingTags, setIsEditingTags] = useState(false)
   const [tagInput, setTagInput] = useState('')
 
-  const load = () => {
+  const load = useCallback(() => {
     api.topic(id).then(setTopic).catch(() => {})
     api.versions(id).then(setVersions).catch(() => {})
-  }
-  useEffect(load, [id])
+  }, [id])
+  useEffect(() => {
+    load()
+  }, [load])
 
   const md = useMemo(() => preprocessWikiLinks(topic?.body_md || ''), [topic])
 
@@ -184,6 +204,10 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
 
   const handleSave = async () => {
     if (!topic) return
+    if (!editTitle.trim()) {
+      showToast('标题不能为空')
+      return
+    }
     setSaving(true)
     try {
       const newBody = `## AI解析\n${editAiParse.trim()}\n\n## 记录轨迹\n${editTrajectory.trim()}`

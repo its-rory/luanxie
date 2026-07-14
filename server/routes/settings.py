@@ -168,6 +168,13 @@ def get_settings():
 
 @router.post("")
 async def save_settings(payload: SettingsUpdate):
+    # Validate confidence levels
+    allowed_confidences = {"high", "medium", "low", "never"}
+    if payload.AUTO_MERGE_EXISTING_CONFIDENCE not in allowed_confidences:
+        raise HTTPException(400, f"无效的自动合并置信度(已有主题): {payload.AUTO_MERGE_EXISTING_CONFIDENCE}")
+    if payload.AUTO_MERGE_NEW_CONFIDENCE not in allowed_confidences:
+        raise HTTPException(400, f"无效的自动合并置信度(新主题): {payload.AUTO_MERGE_NEW_CONFIDENCE}")
+
     # Save to SQLite
     data = payload.model_dump()
     for k, v in data.items():

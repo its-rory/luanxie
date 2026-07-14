@@ -37,13 +37,16 @@ async def create_capture(type: str = Form(...), text: str | None = Form(None),
         name = f"{uuid.uuid4().hex[:12]}{suffix}"
         dest = config.MEDIA_DIR / name
         dest.write_bytes(content)
+        del content  # Free uploaded file memory immediately
 
         if type == "audio":
             out_name = f"{uuid.uuid4().hex[:12]}.mp3"
             out_dest = config.MEDIA_DIR / out_name
             import subprocess
+            import asyncio
             try:
-                subprocess.run(
+                await asyncio.to_thread(
+                    subprocess.run,
                     [
                         "ffmpeg", "-y", "-i", str(dest),
                         "-acodec", "libmp3lame",
@@ -59,8 +62,12 @@ async def create_capture(type: str = Form(...), text: str | None = Form(None),
                 dest.unlink(missing_ok=True)
                 name = out_name
             except Exception:
-                # Fallback to original file if ffmpeg transcoding fails
-                pass
+                # Clean up partially written file on failure
+                if out_dest.exists():
+                    try:
+                        out_dest.unlink(missing_ok=True)
+                    except Exception:
+                        pass
 
         cap = db.create_capture(type, media_path=f"media/{name}")
     else:
@@ -125,23 +132,9 @@ async def reassign_capture(capture_id: str, payload: ReassignPayload):
     if not cap:
         raise HTTPException(404, "capture 不存在")
     
-    # 1. 如果已合并，从旧主题中剔除对应轨迹记录行
+    # 1. 记录旧主题 ID (获取但在 merge 成功后才修改，以防 merge 失败导致旧主题处于不一致的中间态)
     old_topic_id = cap.get("topic_id")
-    if old_topic_id:
-        old_topic = db.get_topic(old_topic_id)
-        if old_topic:
-            import json
-            lines = old_topic["body_md"].split("\n")
-            new_lines = [l for l in lines if f"cap-{capture_id}" not in l]
-            new_body = "\n".join(new_lines)
-            db.update_topic(
-                old_topic_id, None,
-                title=old_topic["title"],
-                summary=old_topic["summary"],
-                body_md=new_body,
-                tags=json.loads(old_topic["tags"])
-            )
-            
+    
     # 2. 执行重新合并逻辑到新/已存在的主题中
     from ..models import TopicDecision
     from ..pipeline.worker import run_merge
@@ -157,4 +150,20 @@ async def reassign_capture(capture_id: str, payload: ReassignPayload):
     db.update_capture(capture_id, status="pending")
     await run_merge(capture_id, decision)
     
+    # 3. 只有当 merge 成功后，才从旧主题中剔除对应轨迹记录行
+    if old_topic_id:
+        old_topic = db.get_topic(old_topic_id)
+        if old_topic:
+            import json
+            lines = old_topic["body_md"].split("\n")
+            new_lines = [l for l in lines if f"cap-{capture_id}" not in l]
+            new_body = "\n".join(new_lines)
+            db.update_topic(
+                old_topic_id, None,
+                title=old_topic["title"],
+                summary=old_topic["summary"],
+                body_md=new_body,
+                tags=json.loads(old_topic["tags"])
+            )
+            
     return db.get_capture(capture_id)

@@ -92,50 +92,75 @@ def reload_env_if_needed():
         except Exception:
             pass
 
+import threading
+_getattr_lock = threading.local()
+
 def __getattr__(name: str):
-    reload_env_if_needed()
-    target_name = _FALLBACK_MAPS.get(name, name)
+    # Prevent infinite recursion when db.py imports config during initialization
+    if getattr(_getattr_lock, "active", False):
+        target_name = _FALLBACK_MAPS.get(name, name)
+        env_val = os.getenv(target_name)
+        if env_val is not None:
+            return env_val
+        return _STATIC_DEFAULTS.get(target_name, "")
 
-    # 1. 尝试从数据库加载设置
+    _getattr_lock.active = True
     try:
-        from . import db
-        db_val = db.get_setting(target_name)
-        if db_val is not None and db_val != "":
-            return db_val
-    except Exception:
-        pass
+        reload_env_if_needed()
+        target_name = _FALLBACK_MAPS.get(name, name)
 
-    # 2. 尝试从环境变量加载设置
-    env_val = os.getenv(target_name)
-    if env_val is not None and env_val != "":
-        return env_val
+        # Ensure we only handle known settings/attributes
+        is_known = (
+            target_name in _STATIC_DEFAULTS or
+            target_name in _FALLBACK_MAPS or
+            any(target_name.startswith(pfx) for pfx in ("LLM_", "TEXT_", "IMAGE_", "AUDIO_", "MERGE_", "AUTO_")) or
+            target_name in ("ADMIN_PASSWORD", "HOST", "PORT", "DB_PATH", "DATA_DIR", "MEDIA_DIR", "WEB_DIST", "PROJECT_ROOT")
+        )
+        if not is_known:
+            raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
-    # 3. 针对特定的 Audio / Text / Image 退避到原版的 .env 变量进行兜底
-    if target_name == "AUDIO_API_KEY":
-        v = os.getenv("TRANSCRIPTION_API_KEY")
-        if v: return v
-    elif target_name == "AUDIO_BASE_URL":
-        v = os.getenv("TRANSCRIPTION_BASE_URL")
-        if v: return v
-    elif target_name == "AUDIO_MODEL":
-        v = os.getenv("TRANSCRIPTION_MODEL")
-        if v: return v
-    elif target_name == "TEXT_MODEL":
-        v = os.getenv("CLASSIFY_MODEL")
-        if v: return v
-    elif target_name == "IMAGE_MODEL":
-        v = os.getenv("VISION_MODEL")
-        if v: return v
+        # 1. 尝试从数据库加载设置
+        try:
+            from . import db
+            db_val = db.get_setting(target_name)
+            if db_val is not None and db_val != "":
+                return db_val
+        except Exception:
+            pass
 
-    # 4. 退避到全局 OpenAI/Anthropic 配置
-    if "API_KEY" in target_name:
-        global_openai_key = os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
-        if global_openai_key: return global_openai_key
-    elif "BASE_URL" in target_name:
-        global_openai_url = os.getenv("OPENAI_BASE_URL") or os.getenv("ANTHROPIC_BASE_URL")
-        if global_openai_url: return global_openai_url
+        # 2. 尝试从环境变量加载设置
+        env_val = os.getenv(target_name)
+        if env_val is not None and env_val != "":
+            return env_val
 
-    # 5. 返回静态默认值
-    return _STATIC_DEFAULTS.get(target_name, "")
+        # 3. 针对特定的 Audio / Text / Image 退避到原版的 .env 变量进行兜底
+        if target_name == "AUDIO_API_KEY":
+            v = os.getenv("TRANSCRIPTION_API_KEY")
+            if v: return v
+        elif target_name == "AUDIO_BASE_URL":
+            v = os.getenv("TRANSCRIPTION_BASE_URL")
+            if v: return v
+        elif target_name == "AUDIO_MODEL":
+            v = os.getenv("TRANSCRIPTION_MODEL")
+            if v: return v
+        elif target_name == "TEXT_MODEL":
+            v = os.getenv("CLASSIFY_MODEL")
+            if v: return v
+        elif target_name == "IMAGE_MODEL":
+            v = os.getenv("VISION_MODEL")
+            if v: return v
+
+        # 4. 退避到全局 OpenAI/Anthropic 配置
+        if "API_KEY" in target_name:
+            global_openai_key = os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+            if global_openai_key: return global_openai_key
+        elif "BASE_URL" in target_name:
+            global_openai_url = os.getenv("OPENAI_BASE_URL") or os.getenv("ANTHROPIC_BASE_URL")
+            if global_openai_url: return global_openai_url
+
+        # 5. 返回静态默认值
+        return _STATIC_DEFAULTS.get(target_name, "")
+    finally:
+        _getattr_lock.active = False
 
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
