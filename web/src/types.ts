@@ -56,6 +56,8 @@ export interface LogEntry {
 export interface Health {
   queue_depth: number
   whisper_installed: boolean
+  local_whisper: boolean
+  cloud_whisper: boolean
   api_key_set: boolean
   auto_merge_existing_confidence: string
   auto_merge_new_confidence: string

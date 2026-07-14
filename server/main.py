@@ -34,13 +34,17 @@ app.include_router(events_route.router, dependencies=[Depends(auth.check_auth)])
 def health():
     import importlib.util
     has_keys = bool(config.TEXT_API_KEY) and bool(config.IMAGE_API_KEY) and bool(config.AUDIO_API_KEY) and bool(config.MERGE_API_KEY)
+    local_wh = any(
+        importlib.util.find_spec(lib) is not None
+        for lib in ["mlx_whisper", "faster_whisper", "whisper"]
+    )
+    cloud_wh = bool(config.AUDIO_API_KEY)
     return {
         "queue_depth": worker.queue_depth(),
         "db": str(config.DB_PATH),
-        "whisper_installed": bool(config.AUDIO_API_KEY) or any(
-            importlib.util.find_spec(lib) is not None
-            for lib in ["mlx_whisper", "faster_whisper", "whisper"]
-        ),
+        "whisper_installed": local_wh or cloud_wh,
+        "local_whisper": local_wh,
+        "cloud_whisper": cloud_wh,
         "api_key_set": has_keys,
         "auto_merge_existing_confidence": config.AUTO_MERGE_EXISTING_CONFIDENCE,
         "auto_merge_new_confidence": config.AUTO_MERGE_NEW_CONFIDENCE,

@@ -204,9 +204,13 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
           </div>
           <div className="kv">
             <span className="k">语音转写 (Whisper)</span>
-            <span className={`v ${health.whisper_installed ? 'ok' : 'warn'}`}>
-              {health.whisper_installed ? '已安装' : '未安装'}
-            </span>
+            {health.cloud_whisper ? (
+              <span className="v ok">云端 API 已就绪</span>
+            ) : health.local_whisper ? (
+              <span className="v ok">本地模型已就绪</span>
+            ) : (
+              <span className="v warn">未配置/未安装</span>
+            )}
           </div>
           <div className="kv">
             <span className="k">归类至已有主题门槛</span>
