@@ -142,9 +142,13 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
   const [diffFor, setDiffFor] = useState<number | null>(null)
 
   const [isEditing, setIsEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
   const [editAiParse, setEditAiParse] = useState('')
   const [editTrajectory, setEditTrajectory] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const [isEditingTags, setIsEditingTags] = useState(false)
+  const [tagInput, setTagInput] = useState('')
 
   const load = () => {
     api.topic(id).then(setTopic).catch(() => {})
@@ -168,6 +172,7 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
   const handleStartEdit = () => {
     if (!topic) return
     const { aiParse, trajectory } = parseTopicBody(topic.body_md || '')
+    setEditTitle(topic.title)
     setEditAiParse(aiParse)
     setEditTrajectory(trajectory)
     setIsEditing(true)
@@ -182,7 +187,10 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
     setSaving(true)
     try {
       const newBody = `## AI解析\n${editAiParse.trim()}\n\n## 记录轨迹\n${editTrajectory.trim()}`
-      const updated = await api.patchTopic(id, { body_md: newBody })
+      const updated = await api.patchTopic(id, {
+        title: editTitle.trim(),
+        body_md: newBody
+      })
       setTopic(updated)
       setIsEditing(false)
       showToast('保存成功')
@@ -191,6 +199,22 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
       showToast('保存失败: ' + (e as Error).message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleSaveTags = async () => {
+    if (!topic) return
+    const parsedTags = tagInput
+      .split(/[,，\s]+/)
+      .map(t => t.trim())
+      .filter(t => t.length > 0)
+    try {
+      const updated = await api.patchTopic(id, { tags: parsedTags })
+      setTopic(updated)
+      setIsEditingTags(false)
+      showToast('标签更新成功')
+    } catch (e) {
+      showToast('保存标签失败: ' + (e as Error).message)
     }
   }
 
@@ -211,9 +235,92 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
     <div className="fade-in">
       <div className="detail-head">
         <button className="back" onClick={back}>← 知识库</button>
-        <h2>{topic.title}</h2>
+        {isEditing ? (
+          <input
+            type="text"
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            style={{
+              background: 'var(--paper-deep)',
+              color: 'var(--ink)',
+              border: '1px solid var(--line)',
+              borderRadius: '8px',
+              padding: '6px 12px',
+              fontSize: '20px',
+              fontFamily: 'var(--serif)',
+              fontWeight: 'bold',
+              width: '100%',
+              marginTop: '8px',
+              marginBottom: '8px'
+            }}
+            placeholder="输入主题标题..."
+          />
+        ) : (
+          <h2>{topic.title}</h2>
+        )}
         <div className="v">v{topic.version} · {new Date(topic.updated_at).toLocaleDateString('zh-CN')}</div>
-        <div className="tags">{topic.tags.map((t) => <span className="tag" key={t}>{t}</span>)}</div>
+        <div className="tags" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+          {isEditingTags ? (
+            <>
+              <input
+                type="text"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                placeholder="标签以逗号或空格分隔"
+                style={{
+                  background: 'var(--paper-deep)',
+                  color: 'var(--ink)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '6px',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  width: '200px'
+                }}
+              />
+              <button
+                className="btn small primary"
+                style={{ padding: '2px 8px', height: '24px', fontSize: '11px', minWidth: 'auto', cursor: 'pointer' }}
+                onClick={handleSaveTags}
+              >
+                ✓
+              </button>
+              <button
+                className="btn small ghost"
+                style={{ padding: '2px 8px', height: '24px', fontSize: '11px', minWidth: 'auto', cursor: 'pointer', marginLeft: '4px' }}
+                onClick={() => setIsEditingTags(false)}
+              >
+                ✗
+              </button>
+            </>
+          ) : (
+            <>
+              {topic.tags.map((t) => <span className="tag" key={t}>{t}</span>)}
+              <button
+                onClick={() => {
+                  setTagInput(topic.tags.join(', '))
+                  setIsEditingTags(true);
+                }}
+                style={{
+                  background: 'none',
+                  border: '1px solid var(--line)',
+                  borderRadius: '6px',
+                  padding: '2px 6px',
+                  color: 'var(--ink-soft)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '11px',
+                  marginLeft: '8px',
+                  height: '22px'
+                }}
+                title="修改标签"
+              >
+                ✏️
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {isEditing ? (

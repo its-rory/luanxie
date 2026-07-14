@@ -77,6 +77,12 @@ export const api = {
     }),
   logout: () => req<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
   me: () => req<{ logged_in: boolean }>('/api/auth/me'),
+  reassignCapture: (id: string, newTopicTitle: string) =>
+    req<Capture>(`/api/captures/${id}/reassign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_topic_title: newTopicTitle }),
+    }),
 }
 
 export function subscribeEvents(onEvent: (data: Record<string, unknown>) => void): () => void {

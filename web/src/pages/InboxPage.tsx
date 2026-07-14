@@ -13,6 +13,10 @@ export default function InboxPage({ tick, openTopic, showToast }: {
   const [items, setItems] = useState<Capture[]>([])
   const [loading, setLoading] = useState(true)
 
+  const [editingCapId, setEditingCapId] = useState<string | null>(null)
+  const [newTopicTitle, setNewTopicTitle] = useState('')
+  const [reassigning, setReassigning] = useState(false)
+
   useEffect(() => {
     setLoading(true)
     api.captures()
@@ -20,6 +24,21 @@ export default function InboxPage({ tick, openTopic, showToast }: {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [tick])
+
+  const handleReassign = async (id: string) => {
+    if (!newTopicTitle.trim()) return
+    setReassigning(true)
+    try {
+      const updated = await api.reassignCapture(id, newTopicTitle.trim())
+      setItems((xs) => xs.map((x) => (x.id === id ? updated : x)))
+      setEditingCapId(null)
+      showToast('重新指派并独立成功')
+    } catch (e) {
+      showToast('改派失败: ' + (e as Error).message)
+    } finally {
+      setReassigning(false)
+    }
+  }
 
   const retry = async (id: string) => {
     try { await api.retry(id); showToast('已重新排队') } catch (e) { showToast((e as Error).message) }
@@ -57,7 +76,7 @@ export default function InboxPage({ tick, openTopic, showToast }: {
               <img src={`/${c.media_path}`} alt="图片" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px', display: 'block', objectFit: 'contain' }} />
             </div>
           )}
-          <div className="meta">
+          <div className="meta" style={{ flexWrap: 'wrap', gap: '8px' }}>
             <StatusBadge status={c.status} />
             {c.status === 'done' && c.topic_id && (
               <>
@@ -66,8 +85,65 @@ export default function InboxPage({ tick, openTopic, showToast }: {
               </>
             )}
             <span>{new Date(c.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-            <button className="status-badge st-failed" style={{ marginLeft: 'auto' }} onClick={() => remove(c.id)}>删除</button>
+            
+            {editingCapId !== c.id && (
+              <>
+                <button
+                  className="status-badge"
+                  style={{
+                    marginLeft: 'auto',
+                    background: 'var(--paper-deep)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--ink)',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => {
+                    setEditingCapId(c.id)
+                    setNewTopicTitle('')
+                  }}
+                >
+                  编辑
+                </button>
+                <button className="status-badge st-failed" style={{ marginLeft: '8px', cursor: 'pointer' }} onClick={() => remove(c.id)}>删除</button>
+              </>
+            )}
           </div>
+
+          {editingCapId === c.id && (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', width: '100%', borderTop: '1px dashed var(--line)', paddingTop: '8px' }}>
+              <input
+                type="text"
+                value={newTopicTitle}
+                onChange={(e) => setNewTopicTitle(e.target.value)}
+                placeholder="输入改派的已有或全新主题标题..."
+                style={{
+                  background: 'var(--paper-deep)',
+                  color: 'var(--ink)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '6px',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  flex: 1
+                }}
+              />
+              <button
+                className="btn small primary"
+                disabled={reassigning || !newTopicTitle.trim()}
+                onClick={() => handleReassign(c.id)}
+                style={{ padding: '4px 10px', height: '28px', fontSize: '11px' }}
+              >
+                确定
+              </button>
+              <button
+                className="btn small ghost"
+                disabled={reassigning}
+                onClick={() => setEditingCapId(null)}
+                style={{ padding: '4px 10px', height: '28px', fontSize: '11px' }}
+              >
+                取消
+              </button>
+            </div>
+          )}
           {c.status === 'failed' && (
             <>
               <div className="err">{c.error}</div>

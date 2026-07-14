@@ -113,3 +113,48 @@ def delete_capture(capture_id: str):
         (config.DATA_DIR / cap["media_path"]).unlink(missing_ok=True)
     db.delete_capture(capture_id)
     return {"ok": True}
+
+
+from pydantic import BaseModel
+class ReassignPayload(BaseModel):
+    new_topic_title: str
+
+@router.post("/{capture_id}/reassign")
+async def reassign_capture(capture_id: str, payload: ReassignPayload):
+    cap = db.get_capture(capture_id)
+    if not cap:
+        raise HTTPException(404, "capture 不存在")
+    
+    # 1. 如果已合并，从旧主题中剔除对应轨迹记录行
+    old_topic_id = cap.get("topic_id")
+    if old_topic_id:
+        old_topic = db.get_topic(old_topic_id)
+        if old_topic:
+            import json
+            lines = old_topic["body_md"].split("\n")
+            new_lines = [l for l in lines if f"cap-{capture_id}" not in l]
+            new_body = "\n".join(new_lines)
+            db.update_topic(
+                old_topic_id, None,
+                title=old_topic["title"],
+                summary=old_topic["summary"],
+                body_md=new_body,
+                tags=json.loads(old_topic["tags"])
+            )
+            
+    # 2. 执行重新合并逻辑到新/已存在的主题中
+    from ..models import TopicDecision
+    from ..pipeline.worker import run_merge
+    
+    decision = TopicDecision(
+        clean_text=cap["clean_text"] or cap["transcript"] or cap["raw_text"] or "",
+        action="new",
+        new_topic_title=payload.new_topic_title.strip(),
+        confidence="high",
+        reason="用户在收件箱中手动重新指派并独立"
+    )
+    
+    db.update_capture(capture_id, status="pending")
+    await run_merge(capture_id, decision)
+    
+    return db.get_capture(capture_id)
