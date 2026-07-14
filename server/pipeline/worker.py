@@ -11,7 +11,6 @@ import traceback
 from .. import config, db, events
 from ..models import TopicDecision
 from . import classify as classify_mod
-from . import merge as merge_mod
 from . import transcribe as transcribe_mod
 
 _queue: asyncio.Queue[str] = asyncio.Queue()
