@@ -16,11 +16,13 @@ def merge(capture: dict, topic: dict) -> tuple[dict, dict]:
     raw = capture["transcript"] or capture["raw_text"] or ""
     clean = capture["clean_text"] or ""
 
-    if capture["type"] in ("text", "audio") and raw and clean and raw != clean:
+    if capture["type"] in ("text", "audio"):
+        r_val = raw or clean
+        c_val = clean or raw
         fragment = (
-            f"原始记录：“{raw}”\n"
-            f"——————————\n"
-            f"AI解析：“{clean}”"
+            f"原始记录：“{r_val}”  \n"
+            f"——————————  \n"
+            f"AI解析：“{c_val}”"
         )
     else:
         fragment = clean or raw
