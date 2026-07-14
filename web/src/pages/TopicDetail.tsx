@@ -732,7 +732,21 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                         AI解析
                       </div>
                       <div className="clean-content" style={{ fontSize: '15px', lineHeight: '1.85', color: 'var(--ink)' }}>
-                        <ReactMarkdown>{cap.clean_text || '(暂无解析)'}</ReactMarkdown>
+                        <ReactMarkdown>
+                          {(() => {
+                            const text = cap.clean_text || '(暂无解析)'
+                            const lines = text.split('\n')
+                            const listFormatted = lines.map(line => {
+                              const trimmed = line.trim()
+                              if (!trimmed) return ''
+                              if (/^([-*+:]|\d+\.)\s/.test(trimmed)) {
+                                return line
+                              }
+                              return `- ${trimmed}`
+                            }).filter(l => l !== '').join('\n')
+                            return listFormatted
+                          })()}
+                        </ReactMarkdown>
                       </div>
                     </div>
 
