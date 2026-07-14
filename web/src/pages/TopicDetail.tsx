@@ -726,63 +726,55 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                     </div>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div>
-                      <div style={{ fontSize: '12px', color: 'var(--ink-soft)', fontWeight: 'bold', marginBottom: '4px' }}>AI解析</div>
+                      <div style={{ fontFamily: 'var(--serif)', fontWeight: 'bold', fontSize: '16px', color: 'var(--ink)', marginBottom: '8px' }}>
+                        ## AI解析
+                      </div>
                       <div className="clean-content" style={{ fontSize: '14px', lineHeight: '1.6', color: 'var(--ink)' }}>
                         <ReactMarkdown>{cap.clean_text || '(暂无解析)'}</ReactMarkdown>
                       </div>
                     </div>
 
-                    <div style={{ background: 'var(--paper-deep)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--line)' }}>
-                      <div style={{ fontSize: '12px', color: 'var(--ink-soft)', fontWeight: 'bold', marginBottom: '6px' }}>原始附件与轨迹</div>
-                      {cap.type === 'audio' && cap.media_path && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                          <AudioPlayButton capId={cap.id} initialLabel="🔊 播放原音" />
-                          <span style={{ fontSize: '11px', color: 'var(--ink-faint)' }}>({cap.media_path.split('/').pop()})</span>
-                        </div>
-                      )}
-                      
-                      {cap.type === 'image' && cap.media_path && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '6px' }}>
-                          <div>
-                            <AudioPlayButton capId={cap.id} initialLabel="🖼️ 点击看原图" />
-                          </div>
-                          <img 
-                            src={`/${cap.media_path}`} 
-                            alt="原始图片" 
-                            style={{ 
-                              maxWidth: '220px', 
-                              maxHeight: '150px', 
-                              borderRadius: '6px', 
-                              objectFit: 'cover',
-                              border: '1px solid var(--line)',
-                              cursor: 'zoom-in'
-                            }}
-                            onClick={() => {
-                              setLightboxUrl(`/${cap.media_path}`)
-                            }}
-                          />
-                        </div>
-                      )}
-                      
-                      {(cap.raw_text || cap.transcript) && (
-                        <details style={{ cursor: 'pointer', fontSize: '12px', color: 'var(--ink-soft)', marginTop: '4px' }}>
-                          <summary style={{ outline: 'none', userSelect: 'none', marginBottom: '4px', fontSize: '11px', fontWeight: 'bold' }}>查看原始记录文字</summary>
-                          <div style={{ 
-                            background: 'var(--paper-card)', 
-                            padding: '8px', 
-                            borderRadius: '6px', 
-                            fontSize: '12px', 
-                            lineHeight: '1.5',
-                            whiteSpace: 'pre-wrap',
-                            color: 'var(--ink-soft)',
-                            border: '1px solid var(--line)'
-                          }}>
-                            {cap.type === 'audio' ? cap.transcript : cap.raw_text}
-                          </div>
-                        </details>
-                      )}
+                    <div>
+                      <div style={{ fontFamily: 'var(--serif)', fontWeight: 'bold', fontSize: '16px', color: 'var(--ink)', marginBottom: '8px' }}>
+                        ## 记录轨迹
+                      </div>
+                      <div className="trajectory-content" style={{ fontSize: '14px', lineHeight: '1.6', color: 'var(--ink)' }}>
+                        <ReactMarkdown
+                          components={{
+                            a: ({ href, children }) => {
+                              if (href?.startsWith('#wiki:')) {
+                                const title = decodeURIComponent(href.slice(6))
+                                return (
+                                  <span
+                                    className="wiki-link"
+                                    role="link"
+                                    tabIndex={0}
+                                    onClick={() => openByTitle(title)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openByTitle(title); } }}
+                                  >
+                                    [[{children}]]
+                                  </span>
+                                )
+                              }
+                              if (href?.startsWith('#audio-play:')) {
+                                const capId = href.slice(12)
+                                return <AudioPlayButton capId={capId} initialLabel={children} />
+                              }
+                              return <a href={href} target="_blank" rel="noreferrer">{children}</a>
+                            },
+                          }}
+                        >
+                          {(() => {
+                            const dateStr = new Date(cap.created_at).toLocaleDateString('sv-SE')
+                            const line = cap.type === 'image'
+                              ? `- ${dateStr} 收录: [图片提取] “${cap.raw_text || ''}” ^cap-${cap.id}`
+                              : `- ${dateStr} 收录: “${cap.transcript || cap.raw_text || ''}” ^cap-${cap.id}`
+                            return preprocessWikiLinks(line)
+                          })()}
+                        </ReactMarkdown>
+                      </div>
                     </div>
                   </div>
                 )}
