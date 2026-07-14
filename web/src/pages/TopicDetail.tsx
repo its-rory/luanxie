@@ -728,19 +728,19 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div>
-                      <div style={{ fontFamily: 'var(--serif)', fontWeight: 'bold', fontSize: '16px', color: 'var(--ink)', marginBottom: '8px' }}>
-                        ## AI解析
+                      <div style={{ fontFamily: 'var(--serif)', fontWeight: 'bold', fontSize: '18px', color: 'var(--ink)', marginBottom: '8px', borderBottom: '1px solid var(--line)', paddingBottom: '4px' }}>
+                        AI解析
                       </div>
-                      <div className="clean-content" style={{ fontSize: '14px', lineHeight: '1.6', color: 'var(--ink)' }}>
+                      <div className="clean-content" style={{ fontSize: '15px', lineHeight: '1.85', color: 'var(--ink)' }}>
                         <ReactMarkdown>{cap.clean_text || '(暂无解析)'}</ReactMarkdown>
                       </div>
                     </div>
 
                     <div>
-                      <div style={{ fontFamily: 'var(--serif)', fontWeight: 'bold', fontSize: '16px', color: 'var(--ink)', marginBottom: '8px' }}>
-                        ## 记录轨迹
+                      <div style={{ fontFamily: 'var(--serif)', fontWeight: 'bold', fontSize: '18px', color: 'var(--ink)', marginBottom: '8px', borderBottom: '1px solid var(--line)', paddingBottom: '4px' }}>
+                        记录轨迹
                       </div>
-                      <div className="trajectory-content" style={{ fontSize: '14px', lineHeight: '1.6', color: 'var(--ink)' }}>
+                      <div className="trajectory-content" style={{ fontSize: '15px', lineHeight: '1.85', color: 'var(--ink)' }}>
                         <ReactMarkdown
                           components={{
                             a: ({ href, children }) => {

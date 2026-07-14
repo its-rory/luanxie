@@ -250,8 +250,8 @@ button.status-badge:hover {
 .note-body h2 { font-family: var(--serif); font-size: 18px; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
 .note-body h3 { font-family: var(--serif); font-size: 16px; margin: 14px 0 6px; }
 .note-body p { margin: 8px 0; }
-.note-body ul, .note-body ol { padding-left: 22px; margin: 8px 0; }
-.note-body li { margin: 4px 0; }
+.note-body ul, .note-body ol, .sub-card ul, .sub-card ol { padding-left: 22px; margin: 8px 0; }
+.note-body li, .sub-card li { margin: 4px 0; }
 .note-body blockquote { border-left: 3px solid var(--cinnabar); padding-left: 12px; color: var(--ink-soft); margin: 10px 0; }
 .note-body code { background: var(--paper-deep); border-radius: 4px; padding: 1px 5px; font-size: 13px; }
 .note-body a, .wiki-link { color: var(--cinnabar); text-decoration: none; border-bottom: 1px dashed rgba(195,39,43,0.5); cursor: pointer; }
