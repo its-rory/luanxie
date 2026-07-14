@@ -12,20 +12,6 @@ MEDIA_DIR = DATA_DIR / "media"
 DB_PATH = DATA_DIR / "luanxie.db"
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
 
-# 置信度阈值:达到该级别及以上的分类结果自动合并,低于则进 awaiting_review。
-# 可选 high / medium / low;设为 low 即全自动。
-AUTO_MERGE_CONFIDENCE = os.getenv("AUTO_MERGE_CONFIDENCE", "high")
-if AUTO_MERGE_CONFIDENCE not in ("high", "medium", "low"):
-    AUTO_MERGE_CONFIDENCE = "high"
-
-AUTO_MERGE_EXISTING_CONFIDENCE = os.getenv("AUTO_MERGE_EXISTING_CONFIDENCE") or os.getenv("AUTO_MERGE_CONFIDENCE") or "medium"
-if AUTO_MERGE_EXISTING_CONFIDENCE not in ("high", "medium", "low", "never"):
-    AUTO_MERGE_EXISTING_CONFIDENCE = "medium"
-
-AUTO_MERGE_NEW_CONFIDENCE = os.getenv("AUTO_MERGE_NEW_CONFIDENCE") or os.getenv("AUTO_MERGE_CONFIDENCE") or "high"
-if AUTO_MERGE_NEW_CONFIDENCE not in ("high", "medium", "low", "never"):
-    AUTO_MERGE_NEW_CONFIDENCE = "high"
-
 # 主题数少于该值时全量清单进 prompt,否则用 FTS5 预筛
 TOPIC_LIST_FULL_LIMIT = 150
 

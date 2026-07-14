@@ -7,16 +7,26 @@ import DiffView from '../components/DiffView'
 /* 把 [[双链]] 和 ^cap-xxxx 预处理成可点击的占位链接 */
 function preprocessWikiLinks(md: string): string {
   let res = md.replace(/\[\[([^\]]+)\]\]/g, (_, title) => `[${title}](#wiki:${encodeURIComponent(title)})`)
-  res = res.replace(/\^cap-([a-f0-9]+)/gi, (_, capId) => `[🔊 听原音](#audio-play:${capId})`)
-  return res
+  // 按行分割处理，检测是否为图片收录，提供不同的占位文案
+  const lines = res.split('\n')
+  const processed = lines.map(line => {
+    if (line.includes('^cap-')) {
+      const isImage = line.includes('[图片提取]')
+      const label = isImage ? '🖼️ 看原图' : '🔊 听原音'
+      return line.replace(/\^cap-([a-f0-9]+)/gi, (_, capId) => `[${label}](#audio-play:${capId})`)
+    }
+    return line
+  })
+  return processed.join('\n')
 }
 
-function AudioPlayButton({ capId }: { capId: string }) {
+function AudioPlayButton({ capId, initialLabel }: { capId: string; initialLabel?: React.ReactNode }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [playing, setPlaying] = useState(false)
   const [type, setType] = useState<'audio' | 'image' | 'text' | null>(null)
+  const [showLightbox, setShowLightbox] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const getAudio = () => {
@@ -35,7 +45,7 @@ function AudioPlayButton({ capId }: { capId: string }) {
     e.stopPropagation()
 
     if (type === 'image' && audioUrl) {
-      window.open(audioUrl, '_blank')
+      setShowLightbox(true)
       return
     }
 
@@ -61,7 +71,7 @@ function AudioPlayButton({ capId }: { capId: string }) {
           audio.src = url
           audio.play().catch(() => {})
         } else if (cap.type === 'image') {
-          window.open(url, '_blank')
+          setShowLightbox(true)
         } else {
           setError(true)
         }
@@ -94,23 +104,59 @@ function AudioPlayButton({ capId }: { capId: string }) {
   if (loading) return <span style={{ color: 'var(--ink-soft)', fontSize: '11px', marginLeft: '6px' }}>加载中…</span>
 
   return (
-    <button
-      onClick={handlePlay}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        background: 'none',
-        border: 'none',
-        padding: '0 4px',
-        color: playing ? 'var(--primary)' : 'var(--primary-soft)',
-        cursor: 'pointer',
-        fontSize: '11px',
-        fontFamily: 'inherit',
-        textDecoration: 'underline'
-      }}
-    >
-      {playing ? '⏸ 暂停' : type === 'image' ? '🖼️ 看原图' : '🔊 听原音'}
-    </button>
+    <>
+      <button
+        onClick={handlePlay}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          background: 'none',
+          border: 'none',
+          padding: '0 4px',
+          color: playing ? 'var(--primary)' : 'var(--primary-soft)',
+          cursor: 'pointer',
+          fontSize: '11px',
+          fontFamily: 'inherit',
+          textDecoration: 'underline'
+        }}
+      >
+        {playing ? '⏸ 暂停' : type === 'image' ? '🖼️ 看原图' : type === 'text' ? '📝 看原文' : initialLabel || '🔊 听原音'}
+      </button>
+
+      {showLightbox && audioUrl && (
+        <div
+          onClick={() => setShowLightbox(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.78)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            cursor: 'zoom-out',
+            animation: 'fadeIn 0.15s ease-out'
+          }}
+        >
+          <img
+            src={audioUrl}
+            alt="收录原图"
+            style={{
+              maxWidth: '92%',
+              maxHeight: '92%',
+              borderRadius: '8px',
+              boxShadow: '0 10px 40px rgba(0, 0, 0, 0.4)',
+              objectFit: 'contain',
+              cursor: 'default'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
   )
 }
 
@@ -421,7 +467,7 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                 }
                 if (href?.startsWith('#audio-play:')) {
                   const capId = href.slice(12)
-                  return <AudioPlayButton capId={capId} />
+                  return <AudioPlayButton capId={capId} initialLabel={children} />
                 }
                 return <a href={href} target="_blank" rel="noreferrer">{children}</a>
               },

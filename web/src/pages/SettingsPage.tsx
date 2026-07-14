@@ -159,6 +159,42 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     }
   }
 
+  const cycleExistingConfidence = async () => {
+    const order: ('low' | 'medium' | 'high' | 'never')[] = ['low', 'medium', 'high', 'never']
+    const current = health?.auto_merge_existing_confidence || 'medium'
+    const nextIdx = (order.indexOf(current as any) + 1) % order.length
+    const nextVal = order[nextIdx]
+    setHealth(prev => prev ? { ...prev, auto_merge_existing_confidence: nextVal } : null)
+    try {
+      const data = await api.getSettings()
+      data.AUTO_MERGE_EXISTING_CONFIDENCE = nextVal
+      await api.saveSettings(data)
+      showToast('自动合并门槛更新成功')
+      loadHealth()
+    } catch (e) {
+      showToast('更新失败: ' + (e as Error).message)
+      loadHealth()
+    }
+  }
+
+  const cycleNewConfidence = async () => {
+    const order: ('low' | 'medium' | 'high' | 'never')[] = ['low', 'medium', 'high', 'never']
+    const current = health?.auto_merge_new_confidence || 'high'
+    const nextIdx = (order.indexOf(current as any) + 1) % order.length
+    const nextVal = order[nextIdx]
+    setHealth(prev => prev ? { ...prev, auto_merge_new_confidence: nextVal } : null)
+    try {
+      const data = await api.getSettings()
+      data.AUTO_MERGE_NEW_CONFIDENCE = nextVal
+      await api.saveSettings(data)
+      showToast('自动合并门槛更新成功')
+      loadHealth()
+    } catch (e) {
+      showToast('更新失败: ' + (e as Error).message)
+      loadHealth()
+    }
+  }
+
   return (
     <div className="fade-in">
       <div className="section-title">设置</div>
@@ -201,17 +237,37 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
               <span className="v warn">未配置/未安装</span>
             )}
           </div>
-          <div className="kv">
+          <div className="kv" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="k">归类至已有主题门槛</span>
-            <span className="v">
+            <button
+              onClick={cycleExistingConfidence}
+              className="btn small ghost"
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
               {{ low: '全自动', medium: '中置信及以上', high: '高置信才自动', never: '从不自动' }[health.auto_merge_existing_confidence] || health.auto_merge_existing_confidence}
-            </span>
+            </button>
           </div>
-          <div className="kv">
+          <div className="kv" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="k">归类为全新主题门槛</span>
-            <span className="v">
+            <button
+              onClick={cycleNewConfidence}
+              className="btn small ghost"
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
               {{ low: '全自动', medium: '中置信及以上', high: '高置信才自动', never: '从不自动' }[health.auto_merge_new_confidence] || health.auto_merge_new_confidence}
-            </span>
+            </button>
           </div>
           <div className="kv" style={{ borderBottom: 'none' }}>
             <span className="k">处理队列</span>
@@ -438,40 +494,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                   </div>
                 </div>
 
-                {/* 5. 自动合并门槛精细化管理 */}
-                <div style={{ border: '1px solid var(--line)', borderRadius: '10px', padding: '12px', background: 'var(--paper-deep)' }}>
-                  <div style={{ fontFamily: 'var(--serif)', fontWeight: 'bold', fontSize: '15px', color: 'var(--ink)', marginBottom: '10px' }}>
-                    自动合并门槛精细化管理
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <div>
-                      <label style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>归档至已有主题门槛</label>
-                      <select 
-                        value={settings.AUTO_MERGE_EXISTING_CONFIDENCE}
-                        onChange={e => handleInputChange('AUTO_MERGE_EXISTING_CONFIDENCE', e.target.value)}
-                        style={{ ...inputStyle, padding: '4px 6px', height: '30px' }}
-                      >
-                        <option value="low">全自动 (全部合并)</option>
-                        <option value="medium">中置信及以上 (推荐)</option>
-                        <option value="high">高置信才自动</option>
-                        <option value="never">从不自动 (总是进入待确认)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>归档为全新主题门槛</label>
-                      <select 
-                        value={settings.AUTO_MERGE_NEW_CONFIDENCE}
-                        onChange={e => handleInputChange('AUTO_MERGE_NEW_CONFIDENCE', e.target.value)}
-                        style={{ ...inputStyle, padding: '4px 6px', height: '30px' }}
-                      >
-                        <option value="low">全自动 (全部合并)</option>
-                        <option value="medium">中置信及以上</option>
-                        <option value="high">高置信才自动 (推荐)</option>
-                        <option value="never">从不自动 (总是进入待确认)</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
+
 
               </div>
 
