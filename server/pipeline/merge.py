@@ -13,19 +13,7 @@ SHRINK_SUSPECT_RATIO = 0.7
 
 def merge(capture: dict, topic: dict) -> tuple[dict, dict]:
     """把 capture 的净化文合并进 topic,落库并返回 (新topic, token用量)。"""
-    raw = capture["transcript"] or capture["raw_text"] or ""
-    clean = capture["clean_text"] or ""
-
-    if capture["type"] in ("text", "audio"):
-        r_val = raw or clean
-        c_val = clean or raw
-        fragment = (
-            f"原始记录：“{r_val}”  \n"
-            f"——————————  \n"
-            f"AI解析：“{c_val}”"
-        )
-    else:
-        fragment = clean or raw
+    fragment = capture["clean_text"] or capture["transcript"] or capture["raw_text"]
 
     today = date.today().isoformat()
     linkable = [t["title"] for t in db.list_topics() if t["id"] != topic["id"]][:100]
