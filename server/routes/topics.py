@@ -130,7 +130,13 @@ def rollback_capture(capture_id: str, version: int):
 
 @router.delete("/captures/{capture_id}")
 def delete_capture_route(capture_id: str):
-    if not db.get_capture(capture_id):
+    cap = db.get_capture(capture_id)
+    if not cap:
         raise HTTPException(404, "子卡片不存在")
+    topic_id = cap.get("topic_id")
     db.delete_capture(capture_id)
+    if topic_id:
+        remaining = db.list_captures_by_topic(topic_id)
+        if not remaining:
+            db.delete_topic(topic_id)
     return {"ok": True}

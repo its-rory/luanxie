@@ -162,30 +162,34 @@ async def reassign_capture(capture_id: str, payload: ReassignPayload):
     db.update_capture(capture_id, status="pending")
     await run_merge(capture_id, decision)
     
-    # 3. 只有当 merge 成功后，才从旧主题中剔除对应合并内容和轨迹记录行
+    # 3. 只有当 merge 成功后，才从旧主题中剔除对应关联或清除空主题
     if old_topic_id:
         old_topic = db.get_topic(old_topic_id)
         if old_topic:
-            import json
-            conn = db.get_conn()
-            snapshot = conn.execute(
-                "SELECT body_md FROM topic_versions WHERE topic_id = ? AND capture_id = ? ORDER BY version DESC LIMIT 1",
-                (old_topic_id, capture_id)
-            ).fetchone()
-            
-            if snapshot:
-                new_body = snapshot[0]
+            remaining_caps = db.list_captures_by_topic(old_topic_id)
+            if not remaining_caps:
+                db.delete_topic(old_topic_id)
             else:
-                lines = old_topic["body_md"].split("\n")
-                new_lines = [l for l in lines if f"cap-{capture_id}" not in l]
-                new_body = "\n".join(new_lines)
+                import json
+                conn = db.get_conn()
+                snapshot = conn.execute(
+                    "SELECT body_md FROM topic_versions WHERE topic_id = ? AND capture_id = ? ORDER BY version DESC LIMIT 1",
+                    (old_topic_id, capture_id)
+                ).fetchone()
                 
-            db.update_topic(
-                old_topic_id, None,
-                title=old_topic["title"],
-                summary=old_topic["summary"],
-                body_md=new_body,
-                tags=json.loads(old_topic["tags"])
-            )
-            
+                if snapshot:
+                    new_body = snapshot[0]
+                else:
+                    lines = old_topic["body_md"].split("\n")
+                    new_lines = [l for l in lines if f"cap-{capture_id}" not in l]
+                    new_body = "\n".join(new_lines)
+                    
+                db.update_topic(
+                    old_topic_id, None,
+                    title=old_topic["title"],
+                    summary=old_topic["summary"],
+                    body_md=new_body,
+                    tags=json.loads(old_topic["tags"])
+                )
+                
     return db.get_capture(capture_id)
