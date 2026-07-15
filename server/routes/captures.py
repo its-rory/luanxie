@@ -139,13 +139,25 @@ async def reassign_capture(capture_id: str, payload: ReassignPayload):
     from ..models import TopicDecision
     from ..pipeline.worker import run_merge
     
-    decision = TopicDecision(
-        clean_text=cap["clean_text"] or cap["transcript"] or cap["raw_text"] or "",
-        action="new",
-        new_topic_title=payload.new_topic_title.strip(),
-        confidence="high",
-        reason="用户在收件箱中手动重新指派并独立"
-    )
+    target_title = payload.new_topic_title.strip()
+    existing_topic = db.get_topic_by_title(target_title)
+    
+    if existing_topic:
+        decision = TopicDecision(
+            clean_text=cap["clean_text"] or cap["transcript"] or cap["raw_text"] or "",
+            action="existing",
+            topic_id=existing_topic["id"],
+            confidence="high",
+            reason="用户在收件箱中手动重新指派至已有主题"
+        )
+    else:
+        decision = TopicDecision(
+            clean_text=cap["clean_text"] or cap["transcript"] or cap["raw_text"] or "",
+            action="new",
+            new_topic_title=target_title,
+            confidence="high",
+            reason="用户在收件箱中手动重新指派并独立"
+        )
     
     db.update_capture(capture_id, status="pending")
     await run_merge(capture_id, decision)
