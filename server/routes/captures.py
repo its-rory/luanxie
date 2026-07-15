@@ -170,6 +170,9 @@ async def reassign_capture(capture_id: str, payload: ReassignPayload):
             if not remaining_caps:
                 db.delete_topic(old_topic_id)
             else:
+                new_latest_cap = remaining_caps[-1]
+                db.update_topic_summary(old_topic_id, (new_latest_cap["clean_text"] or "")[:100])
+                
                 import json
                 conn = db.get_conn()
                 snapshot = conn.execute(

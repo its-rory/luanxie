@@ -107,6 +107,11 @@ def patch_capture(capture_id: str, patch: CapturePatch):
         media_path=cap["media_path"],
         title=patch.title if patch.title is not None else cap["title"]
     )
+    if updated.get("topic_id"):
+        topic_id = updated["topic_id"]
+        caps = db.list_captures_by_topic(topic_id)
+        if caps and caps[-1]["id"] == capture_id:
+            db.update_topic_summary(topic_id, (updated["clean_text"] or "")[:100])
     return updated
 
 
@@ -123,6 +128,11 @@ def rollback_capture(capture_id: str, version: int):
         raise HTTPException(404, "子卡片不存在")
     try:
         updated = db.rollback_capture(capture_id, version)
+        if updated.get("topic_id"):
+            topic_id = updated["topic_id"]
+            caps = db.list_captures_by_topic(topic_id)
+            if caps and caps[-1]["id"] == capture_id:
+                db.update_topic_summary(topic_id, (updated["clean_text"] or "")[:100])
         return updated
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -139,4 +149,7 @@ def delete_capture_route(capture_id: str):
         remaining = db.list_captures_by_topic(topic_id)
         if not remaining:
             db.delete_topic(topic_id)
+        else:
+            new_latest_cap = remaining[-1]
+            db.update_topic_summary(topic_id, (new_latest_cap["clean_text"] or "")[:100])
     return {"ok": True}
