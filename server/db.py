@@ -227,6 +227,14 @@ def pending_captures() -> list[dict]:
     return _rows(cur)
 
 
+def working_captures_count() -> int:
+    """在途作业数(pending/transcribing/classifying/merging),收件箱红点用。"""
+    cur = get_conn().execute(
+        "SELECT COUNT(*) FROM captures WHERE status IN "
+        "('pending','transcribing','classifying','merging')")
+    return cur.fetchone()[0]
+
+
 # ---------- topics ----------
 
 def create_topic(title: str, summary: str = "") -> dict:

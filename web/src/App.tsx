@@ -24,6 +24,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('capture')
   const [topicId, setTopicId] = useState<string | null>(null)
   const [reviewCount, setReviewCount] = useState(0)
+  const [inboxWorkingCount, setInboxWorkingCount] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
   const toastTimerRef = useRef<number | null>(null)
   const [tick, setTick] = useState(0) // SSE 驱动的刷新信号
@@ -44,6 +45,12 @@ export default function App() {
     api.review().then((items) => setReviewCount(items.length)).catch(() => {})
   }, [loggedIn])
 
+  // 收件箱在途作业红点:排队/转写/归类/合并中的任务数
+  const refreshInboxWorkingCount = useCallback(() => {
+    if (!loggedIn) return
+    api.workingCount().then((res) => setInboxWorkingCount(res.count)).catch(() => {})
+  }, [loggedIn])
+
   // Check login status on mount
   useEffect(() => {
     api.me()
@@ -56,11 +63,16 @@ export default function App() {
     if (!loggedIn) return
 
     refreshReviewCount()
+    refreshInboxWorkingCount()
     const unsubscribe = subscribeEvents((ev) => {
       setTick((t) => t + 1)
       // 任何 capture 离开 awaiting_review(改派/批准 → merging → done,拒绝 → rejected)都刷新待确认计数,
       // 否则点确认进入 merging 后红点不消失。
-      if (ev.kind === 'capture') refreshReviewCount()
+      if (ev.kind === 'capture') {
+        refreshReviewCount()
+        // 在途作业数随 capture 状态变化而增减(收录→pending,各阶段→..., done/awaiting_review→移出)
+        refreshInboxWorkingCount()
+      }
     })
 
     return () => {
@@ -69,7 +81,7 @@ export default function App() {
         window.clearTimeout(toastTimerRef.current)
       }
     }
-  }, [loggedIn, refreshReviewCount])
+  }, [loggedIn, refreshReviewCount, refreshInboxWorkingCount])
 
   const openTopic = useCallback((id: string) => {
     setTopicId(id)
@@ -123,6 +135,7 @@ export default function App() {
             <span className="glyph">{t.glyph}</span>
             {t.label}
             {t.key === 'review' && reviewCount > 0 && <span className="badge">{reviewCount}</span>}
+            {t.key === 'inbox' && inboxWorkingCount > 0 && <span className="badge">{inboxWorkingCount}</span>}
           </button>
         ))}
       </nav>

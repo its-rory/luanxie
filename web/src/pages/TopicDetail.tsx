@@ -367,10 +367,16 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
   const handleDeleteCapture = async (capId: string) => {
     if (!confirm('确定要删除此条记录及关联的音频/图片文件吗？此操作不可逆！')) return
     try {
-      await api.deleteTopicCapture(capId)
-      showToast('记录已成功删除')
-      const caps = await api.topicCaptures(id)
-      setCaptures(caps)
+      const res = await api.deleteTopicCapture(capId)
+      if (res.topic_deleted) {
+        // 该子卡片是主题下最后一条,删除后主题已同步删除
+        showToast('删除成功,主题同步删除')
+        back()
+      } else {
+        showToast('记录已成功删除')
+        const caps = await api.topicCaptures(id)
+        setCaptures(caps)
+      }
     } catch (e) {
       showToast('删除子卡片失败: ' + (e as Error).message)
     }

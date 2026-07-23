@@ -84,6 +84,12 @@ def list_captures(status: str | None = None, limit: int = 50, offset: int = 0):
     return db.list_captures(status=status, limit=limit, offset=offset)
 
 
+@router.get("/working-count")
+def working_count():
+    """在途作业数(排队/转写/归类/合并),供收件箱红点显示。"""
+    return {"count": db.working_captures_count()}
+
+
 @router.get("/{capture_id}")
 def get_capture(capture_id: str):
     cap = db.get_capture(capture_id)

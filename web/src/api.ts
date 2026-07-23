@@ -29,6 +29,7 @@ export const api = {
   },
   captures: (status?: string) =>
     req<Capture[]>(`/api/captures${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  workingCount: () => req<{ count: number }>('/api/captures/working-count'),
   capture: (id: string) => req<Capture>(`/api/captures/${id}`),
   retry: (id: string) => req<Capture>(`/api/captures/${id}/retry`, { method: 'POST' }),
   deleteCapture: (id: string) => req<{ ok: boolean }>(`/api/captures/${id}`, { method: 'DELETE' }),
@@ -66,7 +67,7 @@ export const api = {
   rollbackCapture: (id: string, version: number) =>
     req<Capture>(`/api/topics/captures/${id}/rollback/${version}`, { method: 'POST' }),
   deleteTopicCapture: (id: string) =>
-    req<{ ok: boolean }>(`/api/topics/captures/${id}`, { method: 'DELETE' }),
+    req<{ ok: boolean; topic_deleted: boolean }>(`/api/topics/captures/${id}`, { method: 'DELETE' }),
 
   health: () => req<Health>('/api/health'),
   getSettings: () => req<Record<string, string>>('/api/settings'),
