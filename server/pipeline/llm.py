@@ -17,6 +17,21 @@ import threading
 _clients = {}
 _clients_lock = threading.Lock()
 
+# 已知上游工具调用能力登记(影响首发 tool_choice,避免注定失败的 400 往返)。
+# 默认所有 OpenAI 协议上游都支持 forced tool call(硬保证结构化输出);
+# 在此显式登记"不支持 forced/required"的上游,_call_openai 对它们首发 "auto",
+# 由已有的三路兜底解析(tool_calls → reasoning_content 的 <antml:invoke> 提取 → 正文 JSON)保障结构化输出。
+# 例:OpenCode Console Go(DeepSeek-v4 系列等)对 forced tool_choice 直接回 400 "Upstream request failed"。
+_NO_FORCED_TOOL_CHOICE_PROVIDERS = (
+    "opencodego",
+)
+
+
+def _force_forced_tool_choice(provider: str, base_url: str | None) -> bool:
+    """是否对首发使用 forced tool_choice。True=forced 硬保证;False=首发 auto。"""
+    key = f"{provider} {base_url or ''}".lower()
+    return not any(p in key for p in _NO_FORCED_TOOL_CHOICE_PROVIDERS)
+
 
 def get_client(provider: str, api_key: str | None = None, base_url: str | None = None):
     provider_lower = provider.lower()
@@ -140,7 +155,8 @@ def _call_anthropic(*, client, model: str, system: list | str, content, schema: 
 
 def _call_openai(*, client, model: str, system: list | str, content, schema: type[T],
                   tool_name: str, tool_description: str,
-                  max_tokens: int = 4096) -> tuple[T, dict]:
+                  max_tokens: int = 4096,
+                  force_tool_choice: bool = True) -> tuple[T, dict]:
     system_text = _flatten_system(system)
     openai_content = _convert_content_to_openai(content)
 
@@ -159,39 +175,42 @@ def _call_openai(*, client, model: str, system: list | str, content, schema: typ
     ]
 
     import openai
+    # tool_choice 取值表;tc_mode 跟踪"当前已降级到的最低档",跨校验重试轮次保留,避免重复打注定失败的 forced 请求。
+    tc_values = {
+        "forced": {"type": "function", "function": {"name": tool_name}},
+        "required": "required",
+        "auto": "auto",
+    }
+    tc_mode = "forced" if force_tool_choice else "auto"
+
+    def _create(tc):
+        return client.chat.completions.create(
+            model=model, max_tokens=max_tokens,
+            messages=messages, tools=[tool], tool_choice=tc,
+        )
+
+    def _chat_with_degrade():
+        # 从当前 tc_mode 起,若上游对该 tool_choice 返回 400,逐级降级 forced→required→auto。
+        # 安全网:不依赖 provider 报错文案匹配(避免如 "Upstream request failed" 这类文案踩空导致无法降级)。
+        nonlocal tc_mode
+        modes = {
+            "forced": ["forced", "required", "auto"],
+            "required": ["required", "auto"],
+            "auto": ["auto"],
+        }[tc_mode]
+        for m in modes:
+            tc_mode = m
+            try:
+                return _create(tc_values[m])
+            except openai.BadRequestError:
+                if m == "auto":
+                    raise  # 已无可降级档位,抛出让上层处理
+                continue
+        # 不可达
+
     last_err: Exception | None = None
     for _ in range(2):
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                max_tokens=max_tokens,
-                messages=messages,
-                tools=[tool],
-                tool_choice={"type": "function", "function": {"name": tool_name}},
-            )
-        except openai.BadRequestError as e:
-            err_msg = str(e).lower()
-            if "tool_choice" in err_msg or "tool" in err_msg or "20015" in err_msg:
-                try:
-                    # 尝试降级为 "required" (强制要求调用工具，但不由 API 指定具体函数名)
-                    response = client.chat.completions.create(
-                        model=model,
-                        max_tokens=max_tokens,
-                        messages=messages,
-                        tools=[tool],
-                        tool_choice="required",
-                    )
-                except openai.BadRequestError:
-                    # 进一步降级为 "auto" (自动决定，部分不支持 forced tool call 的模型适用)
-                    response = client.chat.completions.create(
-                        model=model,
-                        max_tokens=max_tokens,
-                        messages=messages,
-                        tools=[tool],
-                        tool_choice="auto",
-                    )
-            else:
-                raise e
+        response = _chat_with_degrade()
 
         usage = {
             "input_tokens": response.usage.prompt_tokens,
@@ -329,7 +348,8 @@ def call_structured(*, model: str, system: list | str, content, schema: type[T],
     if client_type == "openai":
         return _call_openai(
             client=client, model=model, system=system, content=content, schema=schema,
-            tool_name=tool_name, tool_description=tool_description, max_tokens=max_tokens
+            tool_name=tool_name, tool_description=tool_description, max_tokens=max_tokens,
+            force_tool_choice=_force_forced_tool_choice(resolved_provider, base_url),
         )
     else:
         return _call_anthropic(

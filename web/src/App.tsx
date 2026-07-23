@@ -58,8 +58,9 @@ export default function App() {
     refreshReviewCount()
     const unsubscribe = subscribeEvents((ev) => {
       setTick((t) => t + 1)
-      if (ev.kind === 'capture' && ev.status === 'awaiting_review') refreshReviewCount()
-      if (ev.kind === 'capture' && ev.status === 'done') refreshReviewCount()
+      // 任何 capture 离开 awaiting_review(改派/批准 → merging → done,拒绝 → rejected)都刷新待确认计数,
+      // 否则点确认进入 merging 后红点不消失。
+      if (ev.kind === 'capture') refreshReviewCount()
     })
 
     return () => {

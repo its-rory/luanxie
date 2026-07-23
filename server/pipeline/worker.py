@@ -75,16 +75,19 @@ from .llm import call_structured
 
 class NamingDecision(BaseModel):
     sub_card_title: str = Field(description="A professional, very short title for this specific capture/message, 4 to 12 chars.")
-    new_topic_title: str | None = Field(None, description="A general category short title for a new topic, 2 to 8 chars. Keep None if not creating a new topic.")
 
-async def generate_titles(clean_text: str, is_new_topic: bool) -> tuple[str, str | None]:
+async def generate_titles(clean_text: str) -> str:
+    """仅生成子卡片标题。
+    主题标题(new_topic_title)不再由 AI 重新命名:
+    - 用户在待确认队列手动指定的主标题,或 classify 阶段 AI 的主题命名,都直接经由 decision.new_topic_title 传入,
+      在此再让 AI 重命名会覆盖用户指定值,故主题标题一律沿用既有来源。
+    """
     system_prompt = """你是一个专业的知识库整理助手。用户提供了一项新条目的AI解析内容。
 请为这项条目生成最合适的名词短语命名：
-1. **sub_card_title**：代表此项记录（子卡片）的具体标题，4~12字（如“一二期分拣机高度差”）。
-2. **new_topic_title**：仅当用户开辟全新大主题时才需要（如“分拣系统规划”），代表大类目录，2~8字。如果不是新主题，则设为 null。"""
-    
-    user_prompt = f"内容如下：\n{clean_text}\n\n是否需要开辟新主题：{'是' if is_new_topic else '否'}"
-    
+**sub_card_title**：代表此项记录（子卡片）的具体标题，4~12字（如“一二期分拣机高度差”）。"""
+
+    user_prompt = f"内容如下：\n{clean_text}"
+
     res, usage = await asyncio.to_thread(
         call_structured,
         model=config.MERGE_MODEL,
@@ -92,12 +95,12 @@ async def generate_titles(clean_text: str, is_new_topic: bool) -> tuple[str, str
         content=user_prompt,
         schema=NamingDecision,
         tool_name="submit_naming",
-        tool_description="Submit the generated sub-card title and optional new topic title",
+        tool_description="Submit the generated sub-card title for this capture",
         provider=config.MERGE_PROVIDER_NAME,
         api_key=config.MERGE_API_KEY,
         base_url=config.MERGE_BASE_URL
     )
-    return res.sub_card_title.strip(), res.new_topic_title.strip() if res.new_topic_title else None
+    return res.sub_card_title.strip()
 
 
 _merge_lock = asyncio.Lock()
@@ -109,22 +112,22 @@ async def run_merge(capture_id: str, decision: TopicDecision) -> None:
         cap = _set_status(capture_id, "merging")
         db.log(capture_id, "merge", "start")
         
-        # 1. 采用合并 AI 的这个 AI 大模型，自动给子卡片和主题卡片命名
+        # 1. 子卡片标题由合并 AI 自动命名;主题标题沿用 decision.new_topic_title
+        #    (用户在待确认队列指定的主标题,或 classify 阶段 AI 的命名,二者都已落在 decision 上)。
         sub_title = None
-        new_topic_title = None
         try:
-            sub_title, new_topic_title = await generate_titles(decision.clean_text, decision.action == "new")
+            sub_title = await generate_titles(decision.clean_text)
         except Exception as e:
             db.log(capture_id, "merge", "warn", f"合并 AI 自动命名失败(已退回默认命名): {e}")
-            
+
         if not sub_title:
             first_line = decision.clean_text.split('\n')[0].strip().replace('- ', '')
             sub_title = first_line[:12] + ("..." if len(first_line) > 12 else "")
             if not sub_title:
                 sub_title = "未命名记录"
-                
-        if decision.action == "new" and not new_topic_title:
-            new_topic_title = decision.new_topic_title or "新主题"
+
+        # new_topic_title 直接沿用既有来源(用户指定优先;否则 classify 阶段 AI 命名);兜底防空
+        new_topic_title = decision.new_topic_title or "新主题"
 
         if decision.action == "new":
             topic = db.create_topic(new_topic_title,
