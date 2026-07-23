@@ -22,8 +22,11 @@ _clients_lock = threading.Lock()
 # 在此显式登记"不支持 forced/required"的上游,_call_openai 对它们首发 "auto",
 # 由已有的三路兜底解析(tool_calls → reasoning_content 的 <antml:invoke> 提取 → 正文 JSON)保障结构化输出。
 # 例:OpenCode Console Go(DeepSeek-v4 系列等)对 forced tool_choice 直接回 400 "Upstream request failed"。
+# 例:硅基流动 Qwen3-VL 系列(Thinking/Instruct)对 forced/required tool_choice 回 400 code 20015,
+# 其中 Instruct 系列在 auto 下也不产出结构化(请用 Thinking 版本如 Qwen3-VL-8B-Thinking), Thinking 在 auto 下稳定产出 tool_call。
 _NO_FORCED_TOOL_CHOICE_PROVIDERS = (
     "opencodego",
+    "siliconflow",
 )
 
 
