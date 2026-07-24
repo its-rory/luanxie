@@ -2,7 +2,7 @@
 
 # 乱写
 
-**随手丢进语音、文字、照片,AI 帮你循序渐进地长出一座知识库,自动导出到 Obsidian。**
+**随手丢进语音、文字、照片,AI 帮你循序渐进地长出一座知识库。**
 
 原文永远留底 · 净化不改写 · 合并可回滚 · 数据全在你自己的机器上
 
@@ -53,7 +53,7 @@
 
 想法来的时候往往很碎:一段语音、几句吐槽、一张白板照片。传统笔记要你当场分好类、写清楚,于是大多数碎片根本没被记下来。
 
-乱写反过来:**先无脑丢进来,整理交给 AI。** 每条碎片先原样存进收件箱，AI 在后台将其提炼成净化文本并自动判断主题归属。拿得准的直接关联进主题卡片并由“合并 AI”大模型自动为子卡片和主题进行专业命名，拿不准的则进入「待确认」留给用户一键批准、改派或拒绝。每个大主题包含多张清晰独立的子卡片，最后增量同步导出到您的 Obsidian 仓库。
+乱写反过来:**先无脑丢进来,整理交给 AI。** 每条碎片先原样存进收件箱，AI 在后台将其提炼成净化文本并自动判断主题归属。拿得准的直接关联进主题卡片并由“合并 AI”大模型自动为子卡片和主题进行专业命名，拿不准的则进入「待确认」留给用户一键批准、改派或拒绝。每个大主题包含多张清晰独立的子卡片，数据全部留存本地 SQLite + media/。
 
 和常见做法比，乱写的取舍集中在三条铁律上——**原文不丢、转写不改写、合并不丢信息:**
 
@@ -63,7 +63,7 @@
 | 转写处理 | 可能顺手润色、改写 | — | **只去语气词、纠错别字,不改你的原话** |
 | 并进笔记 | 多为末尾追加 | AI 自动重组,可能悄悄丢信息 | **关联多张独立子卡片，每一条的原始素材与解析都完整保留** |
 | 版本与回滚 | 少见 | 少见 | **每张子卡片都有独立的编辑版本快照 + diff + 一键回滚** |
-| 数据归属 | 云端 | 云端 | **全在本地:SQLite + 你的 Obsidian** |
+| 数据归属 | 云端 | 云端 | **全在本地:SQLite + media/***(Obsidian 导出为路线图) |
 
 > 表中「转写类工具」「云端知识库」指的是这两类产品的常见做法,不针对具体某款。乱写这一列的每条都能在本仓库代码里找到对应实现。
 
@@ -75,7 +75,7 @@
 - **子卡片流式关联** — 采用子卡片关联架构代替传统的长文本强制合并，主题笔记由多张独立的子卡片流畅拼接呈现，天然避免大模型长文本重写带来的幻觉与细节丢失。
 - **合并 AI 自动命名** — 自动采用高阶的“合并 AI”大模型为收录的子卡片及开辟的新主题生成精炼、专业的名词标题，并可在卡片中随时手动修改。
 - **可溯源、可回滚** — 每张子卡片均拥有独立的版本编辑历史，支持直观的逐行 diff 与一键快速回退。
-- **导出到 Obsidian** — 增量导出为标准 Markdown(frontmatter + `[[双链]]`),原子写入,iCloud 不会同步到半截文件。
+- **Obsidian 导出(路线图)** — 数据模型已为 Markdown(frontmatter + `[[双链]]`)预留版本号与子卡片结构;增量写盘导出尚未启用,当前版本数据全部留存本地 SQLite + media/。
 - **数据自持** — 全部落在本地 `data/`:`luanxie.db`(SQLite)+ `media/`(原始音频与图片),备份这一个目录即可。
 
 ## 界面
@@ -112,6 +112,7 @@ flowchart LR
     W -. "本地转写 或 云端 API 转写 (FFmpeg mp3 压缩)" .-> W
     W -. "LLM (Claude / DeepSeek) 净化、归类与关联命名" .-> W
     EX -->|"增量 · 原子写"| OB
+    %% EX(Exporter → OBVault) 为路线图项,当前版本未启用写盘导出
 ```
 
 每条碎片都跑同一条串行流水线；串行消费天然避免两条碎片并发合并同一主题时打架:
@@ -148,6 +149,7 @@ stateDiagram-v2
 | 操作系统 | ✅ | macOS (Intel / Apple Silicon)、Linux、Windows 均可稳定运行 |
 | [uv](https://docs.astral.sh/uv/) | ✅ | 运行后端；推荐搭配 Python 3.12 虚拟环境运行 |
 | [Node.js](https://nodejs.org) 18+ | ✅ | 构建前端（`web/dist` 不在仓库中，首次部署必须打包编译） |
+| `ADMIN_PASSWORD` | ✅ | **必须**配置管理员密码（至少 6 位,勿用 `admin`）。留空则全站锁定、不可登录。可在「设置」页随时修改 |
 | `API_KEY` | ✅ | 必须配置 `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`（大模型接口密钥） |
 | `ffmpeg` | ✅ | 语音转写/API 音频压缩必需。macOS 用 `brew install ffmpeg`，Linux 用 `sudo apt install ffmpeg` |
 | [Tailscale](https://tailscale.com) 或 1Panel 反代 | ⬜ | 手机端录音需要 HTTPS（由于安全上下文限制）。若只用文字/拍照可以只用 HTTP |
@@ -160,9 +162,10 @@ stateDiagram-v2
 git clone https://github.com/its-rory/luanxie.git
 cd luanxie
 
-# 1. 配置 API key
+# 1. 配置 API key 与管理员密码
 cp .env.example .env
-# 用编辑器打开 .env 填写密钥及选择大模型供应商
+# 用编辑器打开 .env,填写 ADMIN_PASSWORD(必填,至少 6 位)、
+# 大模型接口密钥及选择大模型供应商
 
 # 2. 构建前端
 cd web && npm install && npm run build && cd ..
@@ -188,7 +191,7 @@ curl -s http://localhost:8787/api/health
 
 成功启动将返回状态 JSON：
 ```json
-{"queue_depth":0,"db":".../data/luanxie.db","whisper_installed":true,"api_key_set":true,"auto_merge_confidence":"high","export_dir":".../OBVault/乱写"}
+{"queue_depth":0,"whisper_installed":true,"local_whisper":false,"cloud_whisper":true,"api_key_set":true,"auto_merge_existing_confidence":"medium","auto_merge_new_confidence":"high"}
 ```
 
 - `api_key_set` 表示 `.env` 里的 API Key 是否已配置。
@@ -249,6 +252,7 @@ launchctl load ~/Library/LaunchAgents/com.luanxie.server.plist
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
+| `ADMIN_PASSWORD` | —（**必填**） | 管理员密码(至少 6 位,勿用 `admin`)。留空则全站锁定、不可登录、也无法经 UI 改密。登录后可在「设置」页随时修改 |
 | `LLM_PROVIDER` | `anthropic` | LLM 供应商：`anthropic` (官方 Claude) 或 `openai` (包含 DeepSeek, 硅基流动, OpenRouter 等兼容接口) |
 | `ANTHROPIC_API_KEY` | — | 仅当使用 Anthropic 协议时必填 |
 | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Anthropic 中转代理地址 (可选) |
@@ -257,11 +261,14 @@ launchctl load ~/Library/LaunchAgents/com.luanxie.server.plist
 | `TRANSCRIPTION_API_KEY` | — | 语音转写 API Key。不配置则使用本地 Whisper 模型进行本地转录 (可选) |
 | `TRANSCRIPTION_BASE_URL`| — | 语音转写 API 基础地址 (如 `https://api.siliconflow.cn/v1`) |
 | `TRANSCRIPTION_MODEL`   | `whisper-1` | 语音转写模型名称 (硅基流动推荐使用 `FunAudioLLM/SenseVoiceSmall` 或 `infinitwice/whisper-large-v3`) |
-| `AUTO_MERGE_CONFIDENCE` | `high` | 自动合并门槛：`high` 稳妥 / `medium` / `low` 全自动 |
+| `AUTO_MERGE_EXISTING_CONFIDENCE` | `medium` | 归入**已有主题**的自动合并门槛：`high` 稳妥 / `medium` / `low` 全自动 / `never` 从不自动 |
+| `AUTO_MERGE_NEW_CONFIDENCE` | `high` | 开辟**新主题**的自动合并门槛：`high` / `medium` / `low` / `never`(两项也可在「设置」页改) |
 | `CLASSIFY_MODEL` | `claude-haiku-4-5` | 净化 + 归类模型名 (使用 OpenAI 协议时推荐修改为 `deepseek-ai/DeepSeek-V3`) |
-| `MERGE_MODEL` | `claude-opus-4-8` | 合并重组模型名 (使用 OpenAI 协议时推荐修改为 `deepseek-ai/DeepSeek-R1`) |
-| `VAULT_EXPORT_DIR` | `OBVault/乱写` | Obsidian 导出目标路径 (可写绝对路径) |
-| `EXPORT_INTERVAL_MINUTES` | `0` | 定时导出间隔(分钟)，`0` = 仅手工触发导出 |
+| `MERGE_MODEL` | `claude-opus-4-8` | 子卡片/主题自动命名模型名 (使用 OpenAI 协议时推荐修改为 `deepseek-ai/DeepSeek-R1`) |
+| `SESSION_COOKIE_SECURE` | `auto` | Cookie 的 `Secure` 标志：`auto`(按请求协议)/ `always`(反代终结 HTTPS 时强制)/ `never` |
+| `TRUSTED_PROXIES` | — | 可信反代 IP(逗号分隔)。仅这些 IP 才会被信任读取 `X-Forwarded-For`,否则一律用直连 IP(防伪造头绕过限频与登录失败计数) |
+| `VAULT_EXPORT_DIR` | `OBVault/乱写` | **路线图(当前无效)** Obsidian 导出目标路径,增量写盘导出尚未启用 |
+| `EXPORT_INTERVAL_MINUTES` | `0` | **路线图(当前无效)** 定时导出间隔(分钟),`0` = 仅手工触发导出 |
 
 ## 常见问题
 
@@ -291,7 +298,9 @@ launchctl load ~/Library/LaunchAgents/com.luanxie.server.plist
 
 ## 注意
 
-- `OBVault/乱写/` 是**单向导出目标**,在里面手改的内容会被下次导出覆盖;要改笔记请在 App 里改(或改完别再导出该主题)。
+- **管理员密码**:`ADMIN_PASSWORD` 留空则全站锁定、不可登录;首次启动前请务必在 `.env` 中设置(至少 6 位,勿用 `admin`),之后可在「设置」页随时修改。
+- 配置反代时,把受信代理 IP 填入 `TRUSTED_PROXIES`,并把 `SESSION_COOKIE_SECURE` 设为 `always`,否则登录失败计数/限频可能共用代理 IP、Cookie 可能不带 `Secure`。
+- Obsidian 增量写盘导出当前为**路线图、尚未启用**(`VAULT_EXPORT_DIR` / `EXPORT_INTERVAL_MINUTES` 已预留但当前无效);数据全部留存本地。
 - 首次语音转写会自动下载 whisper 模型(约 1.6GB,之后常驻内存)。
 - 数据都在 `data/`:`luanxie.db`(SQLite)+ `media/`(原始音频图片)。备份这个目录即可。
 
