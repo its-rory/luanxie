@@ -474,6 +474,33 @@ def update_topic_summary(topic_id: str, summary: str) -> None:
         )
 
 
+def cleanup_topic_after_capture_move(topic_id: str) -> bool:
+    """某 capture 改派离开该主题后,对旧主题做原子清理:
+    - 主题已无任何 capture → 删除主题(连带版本),返回 True(已删);
+    - 仍有 capture → 用最后一条的 clean_text 重算摘要,返回 False。
+    主题正文(body_md)在当前数据模型下为空、靠 captures 表关联渲染,无需也不在此裁剪。
+    """
+    conn = get_conn()
+    remaining = _rows(conn.execute(
+        "SELECT id, clean_text FROM captures WHERE topic_id=? ORDER BY created_at ASC",
+        (topic_id,)))
+    if not remaining:
+        with conn:
+            conn.execute("DELETE FROM processing_log WHERE capture_id IN "
+                         "(SELECT id FROM captures WHERE topic_id=?)", (topic_id,))
+            conn.execute("DELETE FROM captures WHERE topic_id=?", (topic_id,))
+            conn.execute("DELETE FROM topic_versions WHERE topic_id=?", (topic_id,))
+            conn.execute("DELETE FROM topics_fts WHERE topic_id=?", (topic_id,))
+            conn.execute("DELETE FROM topics WHERE id=?", (topic_id,))
+        return True
+    new_summary = (remaining[-1]["clean_text"] or "")[:100]
+    ts = now()
+    with conn:
+        conn.execute("UPDATE topics SET summary=?, updated_at=? WHERE id=?",
+                     (new_summary, ts, topic_id))
+    return False
+
+
 def update_capture_content(capture_id: str, *, clean_text: str, raw_text: str | None = None,
                            transcript: str | None = None, media_path: str | None = None,
                            title: str | None = None) -> dict:

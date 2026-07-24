@@ -176,39 +176,19 @@ async def reassign_capture(capture_id: str, payload: ReassignPayload):
         )
     
     db.update_capture(capture_id, status="pending")
-    await run_merge(capture_id, decision)
-    
-    # 3. 只有当 merge 成功后，才从旧主题中剔除对应关联或清除空主题
+    try:
+        await run_merge(capture_id, decision)
+    except Exception:
+        # merge 失败时 capture 状态由 run_merge 内部处理(pending/merging/failed),
+        # 保留旧主题现状不动,交由用户重试;避免改派半完成。
+        raise
+
+    # 3. merge 成功后,对"被改派离开的旧主题"做原子清理:
+    #    无 capture 则删主题,否则用最后一条 capture 重算摘要。
+    #    主题正文(body_md)在当前数据模型下为空、靠 captures 表关联渲染,不在此裁剪——
+    #    旧逻辑曾按 ^cap-{id} 子串启发式裁 body,但 body 恒空且 topic_versions.capture_id 恒为 NULL,
+    #    属无效死代码,已移除。清理收敛到 db.cleanup_topic_after_capture_move 单事务完成。
     if old_topic_id:
-        old_topic = db.get_topic(old_topic_id)
-        if old_topic:
-            remaining_caps = db.list_captures_by_topic(old_topic_id)
-            if not remaining_caps:
-                db.delete_topic(old_topic_id)
-            else:
-                new_latest_cap = remaining_caps[-1]
-                db.update_topic_summary(old_topic_id, (new_latest_cap["clean_text"] or "")[:100])
-                
-                import json
-                conn = db.get_conn()
-                snapshot = conn.execute(
-                    "SELECT body_md FROM topic_versions WHERE topic_id = ? AND capture_id = ? ORDER BY version DESC LIMIT 1",
-                    (old_topic_id, capture_id)
-                ).fetchone()
-                
-                if snapshot:
-                    new_body = snapshot[0]
-                else:
-                    lines = old_topic["body_md"].split("\n")
-                    new_lines = [l for l in lines if f"cap-{capture_id}" not in l]
-                    new_body = "\n".join(new_lines)
-                    
-                db.update_topic(
-                    old_topic_id, None,
-                    title=old_topic["title"],
-                    summary=old_topic["summary"],
-                    body_md=new_body,
-                    tags=json.loads(old_topic["tags"])
-                )
-                
+        db.cleanup_topic_after_capture_move(old_topic_id)
+
     return db.get_capture(capture_id)
