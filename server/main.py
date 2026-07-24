@@ -14,6 +14,15 @@ from .routes import captures, events_route, review, settings, topics, auth
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.get_conn()  # 建表
+    # 启动期强告警:密码缺失(服务将锁定)或仍是出厂默认值 admin(易被爆破)。stderr 直接打印,确保 systemd 日志可见。
+    import sys
+    pw = config.ADMIN_PASSWORD
+    if not pw:
+        print("[luanxie][SECURITY] ADMIN_PASSWORD 未配置:所有受保护端点已锁定,请尽快在设置中配置密码。",
+              file=sys.stderr, flush=True)
+    elif pw == "admin":
+        print("[luanxie][SECURITY] ADMIN_PASSWORD 仍是出厂默认值 'admin',强烈建议修改。",
+              file=sys.stderr, flush=True)
     consumer_task = asyncio.create_task(worker.consumer())
     yield
     consumer_task.cancel()
@@ -57,7 +66,6 @@ def health():
     cloud_wh = bool(config.AUDIO_API_KEY)
     return {
         "queue_depth": worker.queue_depth(),
-        "db": str(config.DB_PATH),
         "whisper_installed": local_wh or cloud_wh,
         "local_whisper": local_wh,
         "cloud_whisper": cloud_wh,
