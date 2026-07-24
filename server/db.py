@@ -272,26 +272,29 @@ def get_topic_by_title(title: str) -> dict | None:
     return dict(row) if row else None
 
 
-def list_topics(q: str | None = None) -> list[dict]:
+def list_topics(q: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
+    limit = max(0, min(int(limit), 200))
+    offset = max(0, int(offset))
     conn = get_conn()
     if q:
         try:
             cur = conn.execute(
                 "SELECT t.* FROM topics t JOIN topics_fts f ON t.id=f.topic_id"
-                " WHERE topics_fts MATCH ? ORDER BY t.updated_at DESC", (q,))
+                " WHERE topics_fts MATCH ? ORDER BY t.updated_at DESC LIMIT ? OFFSET ?", (q, limit, offset))
             return _rows(cur)
         except sqlite3.OperationalError:
             like_query = f"%{q}%"
             cur = conn.execute(
                 "SELECT id, title, summary, tags, version, exported_version,"
                 " created_at, updated_at FROM topics"
-                " WHERE title LIKE ? OR summary LIKE ? ORDER BY updated_at DESC",
-                (like_query, like_query))
+                " WHERE title LIKE ? OR summary LIKE ? ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+                (like_query, like_query, limit, offset))
             return _rows(cur)
     else:
         cur = conn.execute(
             "SELECT id, title, summary, tags, version, exported_version,"
-            " created_at, updated_at FROM topics ORDER BY updated_at DESC")
+            " created_at, updated_at FROM topics ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            (limit, offset))
         return _rows(cur)
 
 

@@ -1,42 +1,48 @@
 import asyncio
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import db
 from .._sanitizer import sanitize_error_text, sanitize_exception
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
+# M4: 设置字段统一长度上限,防超大值写入;API_KEY 留长一点兼容各类 token。
+_K_MAX = 500
+_URL_MAX = 400
+_MODEL_MAX = 200
+_NAME_MAX = 100
+
 class SettingsUpdate(BaseModel):
-    TEXT_PROVIDER_NAME: str
-    TEXT_API_KEY: str
-    TEXT_BASE_URL: str
-    TEXT_MODEL: str
+    TEXT_PROVIDER_NAME: str = Field("", max_length=_NAME_MAX)
+    TEXT_API_KEY: str = Field("", max_length=_K_MAX)
+    TEXT_BASE_URL: str = Field("", max_length=_URL_MAX)
+    TEXT_MODEL: str = Field("", max_length=_MODEL_MAX)
 
-    IMAGE_PROVIDER_NAME: str
-    IMAGE_API_KEY: str
-    IMAGE_BASE_URL: str
-    IMAGE_MODEL: str
+    IMAGE_PROVIDER_NAME: str = Field("", max_length=_NAME_MAX)
+    IMAGE_API_KEY: str = Field("", max_length=_K_MAX)
+    IMAGE_BASE_URL: str = Field("", max_length=_URL_MAX)
+    IMAGE_MODEL: str = Field("", max_length=_MODEL_MAX)
 
-    AUDIO_PROVIDER_NAME: str
-    AUDIO_API_KEY: str
-    AUDIO_BASE_URL: str
-    AUDIO_MODEL: str
+    AUDIO_PROVIDER_NAME: str = Field("", max_length=_NAME_MAX)
+    AUDIO_API_KEY: str = Field("", max_length=_K_MAX)
+    AUDIO_BASE_URL: str = Field("", max_length=_URL_MAX)
+    AUDIO_MODEL: str = Field("", max_length=_MODEL_MAX)
 
-    MERGE_PROVIDER_NAME: str
-    MERGE_API_KEY: str
-    MERGE_BASE_URL: str
-    MERGE_MODEL: str
+    MERGE_PROVIDER_NAME: str = Field("", max_length=_NAME_MAX)
+    MERGE_API_KEY: str = Field("", max_length=_K_MAX)
+    MERGE_BASE_URL: str = Field("", max_length=_URL_MAX)
+    MERGE_MODEL: str = Field("", max_length=_MODEL_MAX)
 
     AUTO_MERGE_EXISTING_CONFIDENCE: str = "medium"
     AUTO_MERGE_NEW_CONFIDENCE: str = "high"
 
 class TestRequest(BaseModel):
-    task: str  # text, image, audio, merge
-    provider: str
-    api_key: str
-    base_url: str
-    model: str
+    task: str = Field(..., max_length=20)  # text, image, audio, merge
+    provider: str = Field(..., max_length=_NAME_MAX)
+    api_key: str = Field(..., max_length=_K_MAX)
+    base_url: str = Field(..., max_length=_URL_MAX)
+    model: str = Field(..., max_length=_MODEL_MAX)
 
 async def test_api_config(task: str, provider: str, api_key: str, base_url: str, model: str) -> str:
     if not api_key:

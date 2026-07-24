@@ -15,13 +15,13 @@ def _with_tags(topic: dict) -> dict:
 
 
 @router.get("")
-def list_topics(q: str | None = None, title: str | None = None):
+def list_topics(q: str | None = None, title: str | None = None, limit: int = 50, offset: int = 0):
     if title:
         topic = db.get_topic_by_title(title)
         if topic:
             return [_with_tags(topic)]
         return []
-    return [_with_tags(t) for t in db.list_topics(q)]
+    return [_with_tags(t) for t in db.list_topics(q, limit=limit, offset=offset)]
 
 
 @router.get("/{topic_id}")
@@ -41,6 +41,11 @@ def patch_topic(topic_id: str, patch: TopicPatch):
         clash = db.get_topic_by_title(patch.title)
         if clash:
             raise HTTPException(409, "标题与已有主题重复")
+    # M4: 限制单个标签长度,防超长标签。
+    if patch.tags is not None:
+        for t in patch.tags:
+            if len(t) > 40:
+                raise HTTPException(400, f"单个标签过长(最大 40 字符): {t[:20]}…")
     updated = db.update_topic(
         topic_id, None,
         title=patch.title or topic["title"],

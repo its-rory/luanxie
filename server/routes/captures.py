@@ -1,9 +1,11 @@
 """捕获入口:接收文字/音频/图片,落库后交给 pipeline。"""
 import uuid
 
-from fastapi import APIRouter, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 
 from .. import config, db
+from .._magic import sniff_media
+from .._ratelimit import SlidingWindowRateLimiter
 from .._sanitizer import sanitize_error_text
 
 router = APIRouter(prefix="/api/captures", tags=["captures"])
@@ -15,14 +17,29 @@ ALLOWED_MEDIA = {
 
 
 MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25MB
+MAX_TEXT_LEN = 20000               # 文字 capture 长度上限,防超大文本喂 LLM
+# 提交限频:每 IP 每分钟最多 30 次提交(文本/语音/图片),缓解刷配额。
+_capture_limiter = SlidingWindowRateLimiter(max_calls=30, window_seconds=60)
+
+
+def _check_rate_limit(request: Request) -> None:
+    ip = (request.client.host if request.client else "unknown") or "unknown"
+    ok, wait = _capture_limiter.allow(ip)
+    if not ok:
+        raise HTTPException(429, f"提交过于频繁,请 {wait} 秒后再试")
+
 
 @router.post("")
-async def create_capture(type: str = Form(...), text: str | None = Form(None),
+async def create_capture(request: Request, type: str = Form(...), text: str | None = Form(None),
                          file: UploadFile | None = None):
+    _check_rate_limit(request)
     if type == "text":
         if not text or not text.strip():
             raise HTTPException(400, "text capture 需要非空 text 字段")
-        cap = db.create_capture("text", raw_text=text.strip())
+        text = text.strip()
+        if len(text) > MAX_TEXT_LEN:
+            raise HTTPException(413, f"文本过长(最大 {MAX_TEXT_LEN} 字符)")
+        cap = db.create_capture("text", raw_text=text)
     elif type in ("audio", "image"):
         if file is None:
             raise HTTPException(400, f"{type} capture 需要上传 file")
@@ -30,11 +47,16 @@ async def create_capture(type: str = Form(...), text: str | None = Form(None),
                   if file.filename and "." in file.filename else "")
         if suffix not in ALLOWED_MEDIA[type]:
             raise HTTPException(400, f"不支持的{type}格式: {suffix or '未知'}")
-        
+
         content = await file.read(MAX_UPLOAD_SIZE + 1)
         if len(content) > MAX_UPLOAD_SIZE:
             raise HTTPException(413, "文件大小超出限制(最大 25MB)")
-            
+
+        # MIME 嗅探:校验文件头与声明类型一致,拒绝跨类伪装(如改扩展名上传非媒体)。
+        ok_mime, detected = sniff_media(content, type)
+        if not ok_mime:
+            raise HTTPException(400, f"文件内容与声明的 {type} 类型不符(疑似 {detected or '非媒体'})")
+
         name = f"{uuid.uuid4().hex[:12]}{suffix}"
         dest = config.MEDIA_DIR / name
         dest.write_bytes(content)
@@ -63,12 +85,14 @@ async def create_capture(type: str = Form(...), text: str | None = Form(None),
                 dest.unlink(missing_ok=True)
                 name = out_name
             except Exception:
-                # Clean up partially written file on failure
+                # ffmpeg 转码失败:清理产物,明确报错而非吞掉走原文件(避免下游静默失败)。
                 if out_dest.exists():
                     try:
                         out_dest.unlink(missing_ok=True)
                     except Exception:
                         pass
+                dest.unlink(missing_ok=True)
+                raise HTTPException(400, "音频转码失败,请检查文件是否可解码")
 
         cap = db.create_capture(type, media_path=f"media/{name}")
     else:
@@ -81,7 +105,8 @@ async def create_capture(type: str = Form(...), text: str | None = Form(None),
 
 @router.get("")
 def list_captures(status: str | None = None, limit: int = 50, offset: int = 0):
-    limit = min(limit, 200)
+    limit = max(0, min(int(limit), 200))
+    offset = max(0, int(offset))
     rows = db.list_captures(status=status, limit=limit, offset=offset)
     # error 字段可能含历史遗留上游错误串,回传前脱敏。
     for r in rows:
