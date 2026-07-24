@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import db
+from .._sanitizer import sanitize_error_text, sanitize_exception
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -139,7 +140,8 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
 
         return ""
     except Exception as e:
-        return str(e)
+        # 不回传上游 SDK 原始异常串(可能含账号/URL/部分 payload),仅回脱敏摘要。
+        return sanitize_exception(e)
 
 def resolve_key(incoming: str, key_name: str) -> str:
     if incoming == "••••••••":

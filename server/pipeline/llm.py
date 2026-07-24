@@ -284,9 +284,12 @@ def _call_openai(*, client, model: str, system: list | str, content, schema: typ
                         last_err = e
 
         if json_data is None:
+            # 不再把完整 message 对象塞进异常(可能含上游 URL/账号/正文),仅保留可定位的事实。
+            finish = getattr(response.choices[0], "finish_reason", "?") if response else "?"
             last_err = ValueError(
-                f"模型未返回预期的 tool_call 函数调用，且正文中未包含有效 JSON。\n"
-                f"模型返回的完整 Message 对象为:\n{repr(message)}"
+                f"模型未返回预期的 tool_call 函数调用，且正文中未包含有效 JSON "
+                f"(finish_reason={finish}, has_reasoning={bool(reasoning)}, "
+                f"content_len={len(message.content or '')}, out_tokens={usage.get('output_tokens')})"
             )
             continue
 

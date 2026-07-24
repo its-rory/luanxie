@@ -4,6 +4,7 @@ import json
 from fastapi import APIRouter, HTTPException
 
 from .. import db
+from .._sanitizer import sanitize_error_text
 from ..models import ReviewAction, TopicDecision
 
 router = APIRouter(prefix="/api/review", tags=["review"])
@@ -13,10 +14,18 @@ router = APIRouter(prefix="/api/review", tags=["review"])
 def list_pending():
     items = db.list_captures(status="awaiting_review", limit=100)
     for cap in items:
-        cap["suggestion"] = json.loads(cap["suggestion"]) if cap["suggestion"] else None
+        if cap.get("suggestion"):
+            try:
+                cap["suggestion"] = json.loads(cap["suggestion"])
+            except (json.JSONDecodeError, TypeError):
+                cap["suggestion"] = None
+        else:
+            cap["suggestion"] = None
         if cap["suggestion"] and cap["suggestion"].get("topic_id"):
             topic = db.get_topic(cap["suggestion"]["topic_id"])
             cap["suggestion"]["topic_title"] = topic["title"] if topic else None
+        if cap.get("error"):
+            cap["error"] = sanitize_error_text(cap["error"])
     return items
 
 
@@ -28,7 +37,10 @@ async def decide(capture_id: str, action: ReviewAction):
     if cap["status"] != "awaiting_review":
         raise HTTPException(400, f"状态 {cap['status']} 不在待确认队列")
 
-    decision = TopicDecision.model_validate_json(cap["suggestion"])
+    try:
+        decision = TopicDecision.model_validate_json(cap["suggestion"])
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, f"该条目的 AI 建议数据已损坏,无法裁决: {e}")
 
     if action.action == "reject":
         db.update_capture(capture_id, status="rejected")

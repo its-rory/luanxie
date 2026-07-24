@@ -6,12 +6,16 @@
 """
 import asyncio
 import json
+import sys
 import traceback
 
 from .. import config, db, events
+from .._sanitizer import sanitize_exception, short_traceback
 from ..models import TopicDecision
 from . import classify as classify_mod
 from . import transcribe as transcribe_mod
+
+_TRACEBACK_MAX = 1500
 
 _queue: asyncio.Queue[str] = asyncio.Queue()
 
@@ -181,10 +185,11 @@ async def _process(capture_id: str) -> None:
             pass
 
         if is_api_err:
-            await _retry_or_fail(capture_id, f"API 暂时性错误: {e}", retryable=True)
+            await _retry_or_fail(capture_id, f"API 暂时性错误: {sanitize_exception(e)}", retryable=True)
         else:
-            db.log(capture_id, "error", "error", traceback.format_exc()[-1500:])
-            await _retry_or_fail(capture_id, str(e), retryable=False)
+            # 完整 traceback 仅打到本地服务器日志(stderr/journal),不进 DB(后者经 captures API 回传前端)。
+            print(short_traceback(e, _TRACEBACK_MAX), file=sys.stderr, flush=True)
+            await _retry_or_fail(capture_id, sanitize_exception(e), retryable=False)
 
 
 async def _retry_or_fail(capture_id: str, error: str, *, retryable: bool) -> None:

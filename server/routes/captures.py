@@ -4,6 +4,7 @@ import uuid
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 
 from .. import config, db
+from .._sanitizer import sanitize_error_text
 
 router = APIRouter(prefix="/api/captures", tags=["captures"])
 
@@ -81,7 +82,12 @@ async def create_capture(type: str = Form(...), text: str | None = Form(None),
 @router.get("")
 def list_captures(status: str | None = None, limit: int = 50, offset: int = 0):
     limit = min(limit, 200)
-    return db.list_captures(status=status, limit=limit, offset=offset)
+    rows = db.list_captures(status=status, limit=limit, offset=offset)
+    # error 字段可能含历史遗留上游错误串,回传前脱敏。
+    for r in rows:
+        if r.get("error"):
+            r["error"] = sanitize_error_text(r["error"])
+    return rows
 
 
 @router.get("/working-count")
@@ -96,6 +102,10 @@ def get_capture(capture_id: str):
     if not cap:
         raise HTTPException(404, "capture 不存在")
     cap["logs"] = db.logs_for(capture_id)
+    # 处理日志的 detail 字段可能含历史遗留的上游 traceback,回传前做脱敏(抹 sk-/Bearer/URL token)。
+    for log_entry in cap["logs"]:
+        if log_entry.get("detail"):
+            log_entry["detail"] = sanitize_error_text(log_entry["detail"])
     if cap["topic_id"]:
         topic = db.get_topic(cap["topic_id"])
         cap["topic_title"] = topic["title"] if topic else None
