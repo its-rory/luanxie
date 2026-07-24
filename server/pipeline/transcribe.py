@@ -121,8 +121,6 @@ async def _transcribe_via_api(audio_path: str) -> str:
 
 
 def _transcribe_sync(audio_path: str) -> str:
-    global _model_instance
-
     # 1. 尝试导入 mlx_whisper (仅 macOS Apple Silicon)
     try:
         import mlx_whisper

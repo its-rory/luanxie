@@ -20,7 +20,7 @@ PORT = int(os.getenv("PORT", "8787"))
 
 # 静态默认配置
 _STATIC_DEFAULTS = {
-    "ADMIN_PASSWORD": "admin",
+    "ADMIN_PASSWORD": "",
     "AUTO_MERGE_EXISTING_CONFIDENCE": "medium",
     "AUTO_MERGE_NEW_CONFIDENCE": "high",
     "LLM_PROVIDER": "",
@@ -48,6 +48,10 @@ _STATIC_DEFAULTS = {
     "MERGE_API_KEY": "",
     "MERGE_BASE_URL": "",
     "MERGE_MODEL": "claude-opus-4-8",
+
+    # 部署在反向代理后才生效的安全开关(见 README)
+    "SESSION_COOKIE_SECURE": "auto",   # auto / always / never
+    "TRUSTED_PROXIES": "",              # 逗号分隔的可信代理 IP,才会信任 X-Forwarded-For
 }
 
 # 废弃的或兼容字段映射

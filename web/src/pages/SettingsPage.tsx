@@ -23,6 +23,8 @@ interface SettingsState {
   MERGE_BASE_URL: string
   MERGE_MODEL: string
 
+  ADMIN_PASSWORD: string
+
   AUTO_MERGE_EXISTING_CONFIDENCE: string
   AUTO_MERGE_NEW_CONFIDENCE: string
 }
@@ -51,6 +53,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     MERGE_API_KEY: '',
     MERGE_BASE_URL: '',
     MERGE_MODEL: '',
+    ADMIN_PASSWORD: '',
     AUTO_MERGE_EXISTING_CONFIDENCE: 'medium',
     AUTO_MERGE_NEW_CONFIDENCE: 'high',
   })
@@ -92,6 +95,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
         MERGE_API_KEY: data.MERGE_API_KEY || '',
         MERGE_BASE_URL: data.MERGE_BASE_URL || '',
         MERGE_MODEL: data.MERGE_MODEL || '',
+        ADMIN_PASSWORD: data.ADMIN_PASSWORD || '',
         AUTO_MERGE_EXISTING_CONFIDENCE: data.AUTO_MERGE_EXISTING_CONFIDENCE || 'medium',
         AUTO_MERGE_NEW_CONFIDENCE: data.AUTO_MERGE_NEW_CONFIDENCE || 'high',
       })
@@ -346,6 +350,18 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
               {/* Form container */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
                 
+                {/* 0. ADMIN PASSWORD */}
+                <div style={{ border: '1px solid var(--line)', borderRadius: '10px', padding: '12px', background: 'var(--paper-deep)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontFamily: 'var(--serif)', fontWeight: 'bold', fontSize: '15px', color: 'var(--ink)' }}>管理员密码 (Admin)</span>
+                    <span style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>留空或保持 ••• 即不修改</span>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>新密码(至少 6 位,勿用 admin)</label>
+                    <input type="password" placeholder="留空(或保持 •••)=不修改" value={settings.ADMIN_PASSWORD} onChange={e => handleInputChange('ADMIN_PASSWORD', e.target.value)} style={inputStyle} />
+                  </div>
+                </div>
+
                 {/* 1. TEXT */}
                 <div style={{ border: '1px solid var(--line)', borderRadius: '10px', padding: '12px', background: 'var(--paper-deep)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>

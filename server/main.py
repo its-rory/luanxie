@@ -18,10 +18,12 @@ async def lifespan(app: FastAPI):
     import sys
     pw = config.ADMIN_PASSWORD
     if not pw:
-        print("[luanxie][SECURITY] ADMIN_PASSWORD 未配置:所有受保护端点已锁定,请尽快在设置中配置密码。",
+        print("[luanxie][SECURITY] ADMIN_PASSWORD 未配置:所有受保护端点已锁定。\n"
+              "    这是安全默认:无密码即不可登录、不可经 UI 改密,防止未配置就裸奔。\n"
+              "    请在 .env 中设置 ADMIN_PASSWORD(建议至少 6 位,勿用 admin)后重启服务。",
               file=sys.stderr, flush=True)
     elif pw == "admin":
-        print("[luanxie][SECURITY] ADMIN_PASSWORD 仍是出厂默认值 'admin',强烈建议修改。",
+        print("[luanxie][SECURITY] ADMIN_PASSWORD 为弱密码 'admin',极易被爆破,强烈建议立即在设置页修改。",
               file=sys.stderr, flush=True)
     consumer_task = asyncio.create_task(worker.consumer())
     yield

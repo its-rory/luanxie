@@ -23,7 +23,8 @@ _capture_limiter = SlidingWindowRateLimiter(max_calls=30, window_seconds=60)
 
 
 def _check_rate_limit(request: Request) -> None:
-    ip = (request.client.host if request.client else "unknown") or "unknown"
+    from .._net import client_ip
+    ip = client_ip(request)
     ok, wait = _capture_limiter.allow(ip)
     if not ok:
         raise HTTPException(429, f"提交过于频繁,请 {wait} 秒后再试")
@@ -168,9 +169,9 @@ def delete_capture(capture_id: str):
     return {"ok": True}
 
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 class ReassignPayload(BaseModel):
-    new_topic_title: str
+    new_topic_title: str = Field(..., max_length=40)
 
 @router.post("/{capture_id}/reassign")
 async def reassign_capture(capture_id: str, payload: ReassignPayload):

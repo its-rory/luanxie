@@ -34,6 +34,8 @@ class SettingsUpdate(BaseModel):
     MERGE_BASE_URL: str = Field("", max_length=_URL_MAX)
     MERGE_MODEL: str = Field("", max_length=_MODEL_MAX)
 
+    ADMIN_PASSWORD: str = Field("", max_length=200)
+
     AUTO_MERGE_EXISTING_CONFIDENCE: str = "medium"
     AUTO_MERGE_NEW_CONFIDENCE: str = "high"
 
@@ -44,9 +46,44 @@ class TestRequest(BaseModel):
     base_url: str = Field(..., max_length=_URL_MAX)
     model: str = Field(..., max_length=_MODEL_MAX)
 
+def _validate_base_url(base_url: str) -> str | None:
+    """校验 test 端点 base_url:仅允许 http/https、阻断链路本地/云元数据段(169.254.*)。
+    localhost 与私网放行(支持本地自建模型);其余不做限制。"""
+    import ipaddress, socket
+    from urllib.parse import urlparse
+    u = (base_url or "").strip()
+    if not u:
+        return "Base URL 不能为空"
+    try:
+        parsed = urlparse(u)
+    except Exception:
+        return "Base URL 解析失败"
+    if parsed.scheme not in ("http", "https"):
+        return f"Base URL 必须是 http/https,不能是 '{parsed.scheme}'"
+    host = parsed.hostname or ""
+    if not host:
+        return "Base URL 缺少主机名"
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return f"无法解析主机名 '{host}'"
+    for info in infos:
+        ip = info[4][0]
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if addr.is_link_local:
+            return f"禁止访问链路本地/云元数据地址 '{ip}'(SSRF 防护)"
+    return None
+
+
 async def test_api_config(task: str, provider: str, api_key: str, base_url: str, model: str) -> str:
     if not api_key:
         return "API Key 不能为空"
+    url_err = _validate_base_url(base_url)
+    if url_err:
+        return url_err
     try:
         import httpx
         from ..pipeline.llm import get_client
@@ -159,6 +196,7 @@ def resolve_key(incoming: str, key_name: str) -> str:
 def get_settings():
     from .. import config
     keys = [
+        "ADMIN_PASSWORD",
         "TEXT_PROVIDER_NAME", "TEXT_API_KEY", "TEXT_BASE_URL", "TEXT_MODEL",
         "IMAGE_PROVIDER_NAME", "IMAGE_API_KEY", "IMAGE_BASE_URL", "IMAGE_MODEL",
         "AUDIO_PROVIDER_NAME", "AUDIO_API_KEY", "AUDIO_BASE_URL", "AUDIO_MODEL",
@@ -168,7 +206,7 @@ def get_settings():
     result = {}
     for k in keys:
         val = getattr(config, k, "")
-        if "API_KEY" in k and val:
+        if ("API_KEY" in k or k == "ADMIN_PASSWORD") and val:
             result[k] = "••••••••"
         else:
             result[k] = val
@@ -183,9 +221,20 @@ async def save_settings(payload: SettingsUpdate):
     if payload.AUTO_MERGE_NEW_CONFIDENCE not in allowed_confidences:
         raise HTTPException(400, f"无效的自动合并置信度(新主题): {payload.AUTO_MERGE_NEW_CONFIDENCE}")
 
+    # 密码单独处理:空或掩码→保持不动;非空新值→校验后写入,防止误清空锁死全站
+    new_pw = payload.ADMIN_PASSWORD or ""
+    if new_pw not in ("", "••••••••"):
+        if len(new_pw) < 6:
+            raise HTTPException(400, "管理员密码至少 6 位")
+        if new_pw == "admin":
+            raise HTTPException(400, "管理员密码不能使用出厂弱密码 'admin'")
+        db.set_setting("ADMIN_PASSWORD", new_pw)
+
     # Save to SQLite
     data = payload.model_dump()
     for k, v in data.items():
+        if k == "ADMIN_PASSWORD":
+            continue
         if "API_KEY" in k:
             db.set_setting(k, resolve_key(v, k))
         else:

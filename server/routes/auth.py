@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Response, Cookie, Request
 from pydantic import BaseModel
 
 from .. import config, db
+from .._net import client_ip as _resolve_client_ip
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -24,10 +25,17 @@ _fail_lock = threading.Lock()
 
 
 def _client_ip(request: Request) -> str:
-    try:
-        return request.client.host or "unknown"
-    except Exception:
-        return "unknown"
+    # 受信代理下取 X-Forwarded-For(防反代全员共享一个 IP);否则用直连 IP(防伪造 XFF)
+    return _resolve_client_ip(request)
+
+def _cookie_secure(request: Request) -> bool:
+    mode = (config.SESSION_COOKIE_SECURE or "auto").lower()
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+    # auto:以 request.url.scheme 为准;反代后给 uvicorn 传 --proxy-headers 可让其为 https
+    return request.url.scheme == "https"
 
 
 def _login_locked(ip: str) -> float:
@@ -78,7 +86,7 @@ async def login(payload: LoginRequest, response: Response, request: Request):
     db.create_session(token, expires_at)
 
     # Set HTTP-only cookie with dynamic secure flag
-    secure_cookie = request.url.scheme == "https"
+    secure_cookie = _cookie_secure(request)
     response.set_cookie(
         key="session_token",
         value=token,
