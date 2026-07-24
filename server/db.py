@@ -92,6 +92,8 @@ def get_conn() -> sqlite3.Connection:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        # M2: 写竞争时排队等待而非立即抛 "database is locked",5s 足够单写者 worker 串行完成。
+        conn.execute("PRAGMA busy_timeout=5000")
         with _schema_lock:
             if not _schema_initialized:
                 conn.executescript(SCHEMA)
@@ -562,4 +564,11 @@ def rollback_capture(capture_id: str, version: int) -> dict:
             " WHERE id=?",
             (snap["clean_text"], snap["raw_text"], snap["transcript"], snap["media_path"], snap["title"], capture_id)
         )
+
+    # M10: 回滚后若快照的 media_path 指向已被物理删除的文件,置空避免下游
+    # _image_block/transcribe 触发 FileNotFoundError。文本类无 media_path 不受影响。
+    new_media = snap["media_path"]
+    if new_media and not (config.DATA_DIR / new_media).is_file():
+        conn.execute("UPDATE captures SET media_path=NULL WHERE id=?", (capture_id,))
+        conn.commit()
     return get_capture(capture_id)

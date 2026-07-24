@@ -86,7 +86,8 @@ if config.WEB_DIST.exists():
             file = (config.WEB_DIST / path).resolve()
             if path and file.is_file() and file.is_relative_to(resolved_dist):
                 return FileResponse(file)
-        except Exception:
+        except OSError:
+            # 文件系统/路径异常按 SPA 语义回退 index.html;其它异常仍向上传播。
             pass
         return FileResponse(config.WEB_DIST / "index.html")
 

@@ -115,8 +115,9 @@ def patch_capture(capture_id: str, patch: CapturePatch):
     if updated.get("topic_id"):
         topic_id = updated["topic_id"]
         caps = db.list_captures_by_topic(topic_id)
-        if caps and caps[-1]["id"] == capture_id:
-            db.update_topic_summary(topic_id, (updated["clean_text"] or "")[:100])
+        # M9: 仅当该卡片是最新一条且新内容非空时重算摘要,避免空 clean_text 把主题摘要清空。
+        if caps and caps[-1]["id"] == capture_id and (updated["clean_text"] or "").strip():
+            db.update_topic_summary(topic_id, updated["clean_text"][:100])
     return updated
 
 
