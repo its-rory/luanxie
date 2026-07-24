@@ -20,12 +20,13 @@ function preprocessWikiLinks(md: string): string {
   return processed.join('\n')
 }
 
-function AudioPlayButton({ capId, initialLabel }: { capId: string; initialLabel?: React.ReactNode }) {
+function AudioPlayButton({ capId, initialLabel, initialType }: { capId: string; initialLabel?: React.ReactNode; initialType?: 'audio' | 'image' | 'text' | null }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [playing, setPlaying] = useState(false)
-  const [type, setType] = useState<'audio' | 'image' | 'text' | null>(null)
+  const [type, setType] = useState<'audio' | 'image' | 'text' | null>(initialType ?? null)
+  const [noOriginal, setNoOriginal] = useState(initialType === 'text')
   const [showLightbox, setShowLightbox] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
@@ -73,10 +74,10 @@ function AudioPlayButton({ capId, initialLabel }: { capId: string; initialLabel?
         } else if (cap.type === 'image') {
           setShowLightbox(true)
         } else {
-          setError(true)
+          setNoOriginal(true)
         }
       } else {
-        setError(true)
+        setNoOriginal(true)
       }
     } catch {
       setError(true)
@@ -101,6 +102,8 @@ function AudioPlayButton({ capId, initialLabel }: { capId: string; initialLabel?
   }, [])
 
   if (error) return <span style={{ color: 'var(--ink-faint)', fontSize: '11px', marginLeft: '6px' }}>(无原件)</span>
+  // 文字记录无原始音频/图片可播放或查看,不显示"听原音/看原图"按钮(避免点开后显示"无原件")
+  if (noOriginal) return null
   if (loading) return <span style={{ color: 'var(--ink-soft)', fontSize: '11px', marginLeft: '6px' }}>加载中…</span>
 
   return (
@@ -592,7 +595,8 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                   }
                   if (href?.startsWith('#audio-play:')) {
                     const capId = href.slice(12)
-                    return <AudioPlayButton capId={capId} initialLabel={children} />
+                    const capType = captures.find((c) => c.id === capId)?.type as 'audio' | 'image' | 'text' | undefined
+                    return <AudioPlayButton capId={capId} initialLabel={children} initialType={capType ?? null} />
                   }
                   return <a href={href} target="_blank" rel="noreferrer">{children}</a>
                 },
@@ -803,7 +807,7 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                               }
                               if (href?.startsWith('#audio-play:')) {
                                 const capId = href.slice(12)
-                                return <AudioPlayButton capId={capId} initialLabel={children} />
+                                return <AudioPlayButton capId={capId} initialLabel={children} initialType={cap.type} />
                               }
                               return <a href={href} target="_blank" rel="noreferrer">{children}</a>
                             },
