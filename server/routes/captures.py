@@ -119,7 +119,12 @@ async def retry_capture(capture_id: str):
         raise HTTPException(404, "capture 不存在")
     if cap["status"] not in ("failed", "rejected"):
         raise HTTPException(400, f"状态 {cap['status']} 不可重试")
-    db.update_capture(capture_id, status="pending", error=None, retry_count=0)
+    # H3: 手动重试不再重置 retry_count,改为累计 +1,且受总上限约束,防止反复点击无限在上游重试耗配额。
+    from ..pipeline.worker import MAX_TOTAL_RETRIES
+    new_count = (cap["retry_count"] or 0) + 1
+    if new_count > MAX_TOTAL_RETRIES:
+        raise HTTPException(400, f"已达累计重试上限(自动+手动共 {MAX_TOTAL_RETRIES} 次),请检查配置或删除该条目")
+    db.update_capture(capture_id, status="pending", error=None, retry_count=new_count)
     from ..pipeline.worker import enqueue
     await enqueue(capture_id)
     return db.get_capture(capture_id)

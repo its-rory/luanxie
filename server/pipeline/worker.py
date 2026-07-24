@@ -18,12 +18,19 @@ from . import transcribe as transcribe_mod
 _TRACEBACK_MAX = 1500
 
 _queue: asyncio.Queue[str] = asyncio.Queue()
+# 在途去重:避免同一 capture 被多次入队并发处理(启动期 pending_captures + 后台延迟重入队 + 手动重试 可能重复)。
+_inflight: set[str] = set()
 
-MAX_RETRIES = 3
+MAX_RETRIES = 3           # 单次失败链内的自动重试上限(向后兼容保留)
+MAX_TOTAL_RETRIES = 6     # 累计总重试上限(自动 + 手动合计),防无限重试耗配额
 CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2, "never": 99}
 
 
 async def enqueue(capture_id: str) -> None:
+    # 去重:已在队列/处理中/已调度重试的,不重复入队。
+    if capture_id in _inflight:
+        return
+    _inflight.add(capture_id)
     await _queue.put(capture_id)
 
 
@@ -195,12 +202,16 @@ async def _process(capture_id: str) -> None:
 async def _retry_or_fail(capture_id: str, error: str, *, retryable: bool) -> None:
     cap = db.get_capture(capture_id)
     retries = cap["retry_count"] + 1
-    if retryable and retries < MAX_RETRIES:
-        db.update_capture(capture_id, retry_count=retries, error=error)
-        delay = 5 * (2 ** retries)
-        db.log(capture_id, "retry", "start", f"第{retries}次重试,{delay}s 后")
-        await asyncio.sleep(delay)
-        await enqueue(capture_id)
+    # 累计总上限:自动 + 手动合计不超过 MAX_TOTAL_RETRIES,避免反复手动重试无限耗上游配额。
+    if retryable and retries <= MAX_TOTAL_RETRIES:
+        db.update_capture(capture_id, status="pending", retry_count=retries, error=error)
+        delay = min(5 * (2 ** min(retries, 5)), 160)  # 指数退避上限 160s
+        db.log(capture_id, "retry", "start", f"第{retries}次重试,{delay}s 后(累计上限{MAX_TOTAL_RETRIES})")
+        # 后台延迟再入队,不阻塞消费者处理其它 capture(原 await asyncio.sleep 会冻结整条流水线)。
+        async def _delayed_requeue():
+            await asyncio.sleep(delay)
+            await enqueue(capture_id)
+        asyncio.create_task(_delayed_requeue())
     else:
         _set_status(capture_id, "failed", error=error, retry_count=retries)
         db.log(capture_id, "error", "error", error)
@@ -217,6 +228,7 @@ async def consumer() -> None:
         except Exception:
             traceback.print_exc()
         finally:
+            _inflight.discard(capture_id)
             _queue.task_done()
 
 
