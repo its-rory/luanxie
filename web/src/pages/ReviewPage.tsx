@@ -91,10 +91,17 @@ function ReviewCard({
         </div>
       )}
       <div className="verdict">
-        AI 建议:{s?.action === 'new'
-          ? <>开新主题 <b>「{s.new_topic_title}」</b></>
-          : <>归入 <b>「{s?.topic_title || '?'}」</b></>}
-        <div className="reason">{s?.reason}(置信度:{s?.confidence === 'medium' ? '中' : '低'})</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', flexWrap: 'wrap', gap: '4px' }}>
+          <span>
+            AI 建议: {s?.action === 'new'
+              ? <>开新主题 <b>「{s.new_topic_title}」</b></>
+              : <>归入 <b>「{s?.topic_title || '?'}」</b></>}
+          </span>
+          <span className="tag" style={{ fontSize: '11px', color: s?.confidence === 'medium' ? 'var(--cinnabar)' : 'var(--ochre)' }}>
+            置信度: {s?.confidence === 'medium' ? '中' : '低'}
+          </span>
+        </div>
+        {s?.reason && <div className="reason">{s.reason}</div>}
       </div>
       {isReassigning ? (
         <>
@@ -115,7 +122,7 @@ function ReviewCard({
           </div>
         </>
       ) : (
-        <div className="row">
+        <div className="row" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
           <button className="btn small primary" disabled={busy === c.id}
             onClick={() => act(c.id, { action: 'approve' })}>批准</button>
           <button className="btn small" disabled={busy === c.id}

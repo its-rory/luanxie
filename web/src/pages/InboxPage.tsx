@@ -100,16 +100,9 @@ export default function InboxPage({ tick, openTopic, showToast }: {
             <span>{new Date(c.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
             
             {editingCapId !== c.id && (
-              <>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
                 <button
-                  className="status-badge"
-                  style={{
-                    marginLeft: 'auto',
-                    background: 'var(--paper-deep)',
-                    border: '1px solid var(--line)',
-                    color: 'var(--ink)',
-                    cursor: 'pointer'
-                  }}
+                  className="action-btn"
                   onClick={() => {
                     setEditingCapId(c.id)
                     setNewTopicTitle('')
@@ -117,13 +110,15 @@ export default function InboxPage({ tick, openTopic, showToast }: {
                 >
                   编辑
                 </button>
-                <button className="status-badge st-failed" style={{ marginLeft: '8px', cursor: 'pointer' }} onClick={() => remove(c.id)}>删除</button>
-              </>
+                <button className="action-btn danger" onClick={() => remove(c.id)}>
+                  删除
+                </button>
+              </div>
             )}
           </div>
 
           {editingCapId === c.id && (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', width: '100%', borderTop: '1px dashed var(--line)', paddingTop: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px', width: '100%', borderTop: '1px dashed var(--line)', paddingTop: '10px' }}>
               <input
                 type="text"
                 value={newTopicTitle}
@@ -134,16 +129,17 @@ export default function InboxPage({ tick, openTopic, showToast }: {
                   color: 'var(--ink)',
                   border: '1px solid var(--line)',
                   borderRadius: '6px',
-                  padding: '4px 8px',
-                  fontSize: '12px',
-                  flex: 1
+                  height: '28px',
+                  padding: '0 10px',
+                  fontSize: '12.5px',
+                  flex: 1,
+                  outline: 'none'
                 }}
               />
               <button
                 className="btn small primary"
                 disabled={reassigningCapId === c.id || !newTopicTitle.trim()}
                 onClick={() => handleReassign(c.id)}
-                style={{ padding: '4px 10px', height: '28px', fontSize: '11px' }}
               >
                 确定
               </button>
@@ -151,7 +147,6 @@ export default function InboxPage({ tick, openTopic, showToast }: {
                 className="btn small ghost"
                 disabled={reassigningCapId === c.id}
                 onClick={() => setEditingCapId(null)}
-                style={{ padding: '4px 10px', height: '28px', fontSize: '11px' }}
               >
                 取消
               </button>

@@ -474,14 +474,14 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
               />
               <button
                 className="btn small primary"
-                style={{ padding: '2px 8px', height: '24px', fontSize: '11px', minWidth: 'auto', cursor: 'pointer' }}
+                style={{ height: '26px', padding: '0 8px', fontSize: '12px' }}
                 onClick={handleSaveTags}
               >
                 ✓
               </button>
               <button
                 className="btn small ghost"
-                style={{ padding: '2px 8px', height: '24px', fontSize: '11px', minWidth: 'auto', cursor: 'pointer', marginLeft: '4px' }}
+                style={{ height: '26px', padding: '0 8px', fontSize: '12px', marginLeft: '4px' }}
                 onClick={() => setIsEditingTags(false)}
               >
                 ✗
@@ -493,22 +493,10 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
               <button
                 onClick={() => {
                   setTagInput(topic.tags.join(', '))
-                  setIsEditingTags(true);
+                  setIsEditingTags(true)
                 }}
-                style={{
-                  background: 'none',
-                  border: '1px solid var(--line)',
-                  borderRadius: '6px',
-                  padding: '2px 6px',
-                  color: 'var(--ink-soft)',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '11px',
-                  marginLeft: '8px',
-                  height: '22px'
-                }}
+                className="action-btn"
+                style={{ height: '24px', padding: '0 6px', fontSize: '12px', marginLeft: '6px' }}
                 title="修改标签"
               >
                 ✏️
@@ -639,22 +627,12 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
               <div 
                 key={cap.id} 
                 className="sub-card"
-                style={{
-                  background: 'var(--paper-card)',
-                  border: '1px solid var(--line)',
-                  borderRadius: '12px',
-                  padding: '18px',
-                  boxShadow: '0 4px 14px rgba(43,38,32,0.04)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px'
-                }}
               >
                 {/* Sub-card header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontWeight: 'bold', fontSize: '14px', color: 'var(--ink)' }}>子卡片 #{idx + 1}{cap.title ? ` : ${cap.title}` : ''}</span>
-                    <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--paper-deep)', border: '1px solid var(--line)', color: 'var(--ink-soft)' }}>
+                    <span style={{ fontWeight: 'bold', fontSize: '14.5px', color: 'var(--ink)' }}>子卡片 #{idx + 1}{cap.title ? ` : ${cap.title}` : ''}</span>
+                    <span className="tag" style={{ fontSize: '11px' }}>
                       {typeLabel}
                     </span>
                   </div>
@@ -663,23 +641,20 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                     {!isEditingCap && (
                       <>
                         <button 
-                          className="btn small ghost" 
+                          className="action-btn" 
                           onClick={() => toggleCapVersions(cap.id)}
-                          style={{ padding: '2px 8px', fontSize: '11px', height: '24px', minWidth: 'auto' }}
                         >
                           {capVerState.show ? '收起历史' : `历史(${cap.version || 0})`}
                         </button>
                         <button 
-                          className="btn small ghost" 
+                          className="action-btn" 
                           onClick={() => handleStartEditCapture(cap)}
-                          style={{ padding: '2px 8px', fontSize: '11px', height: '24px', minWidth: 'auto' }}
                         >
                           编辑
                         </button>
                         <button 
-                          className="btn small danger-ghost" 
+                          className="action-btn danger" 
                           onClick={() => handleDeleteCapture(cap.id)}
-                          style={{ padding: '2px 8px', fontSize: '11px', height: '24px', minWidth: 'auto', background: 'none', border: 'none', color: 'var(--cinnabar)', cursor: 'pointer' }}
                         >
                           删除
                         </button>
@@ -853,8 +828,7 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                               <span style={{ color: 'var(--ink-faint)', fontSize: '11px' }}>{new Date(cv.created_at).toLocaleString()}</span>
                             </div>
                             <button 
-                              className="btn small ghost" 
-                              style={{ padding: '1px 6px', fontSize: '11px', height: '20px', minWidth: 'auto' }}
+                              className="action-btn"
                               onClick={() => handleRollbackCapture(cap.id, cv.version)}
                             >
                               回滚
@@ -877,13 +851,13 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
         )}
       </div>
 
-      <div className="versions">
+      <div className="versions" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--line)', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
         {isEditing ? (
           <>
             <button className="btn small primary" onClick={handleSave} disabled={saving}>
               {saving ? '保存中…' : '保存'}
             </button>
-            <button className="btn small ghost" style={{ marginLeft: '10px' }} onClick={handleCancel} disabled={saving}>
+            <button className="btn small ghost" onClick={handleCancel} disabled={saving}>
               取消
             </button>
           </>
@@ -894,10 +868,10 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                 {showVersions ? '收起版本历史' : `主题历史(${versions.length})`}
               </button>
             )}
-            <button className="btn small ghost" style={{ marginLeft: topic.body_md && topic.body_md.trim() ? '10px' : '0px' }} onClick={handleStartEdit}>
+            <button className="btn small" onClick={handleStartEdit}>
               编辑主题标题
             </button>
-            <button className="btn small danger" style={{ marginLeft: '10px' }} onClick={handleDelete}>
+            <button className="btn small danger" onClick={handleDelete}>
               删除此主题
             </button>
           </>
