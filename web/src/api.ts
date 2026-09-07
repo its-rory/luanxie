@@ -77,7 +77,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
-  testSettings: (body: { task: string; provider: string; api_key: string; base_url: string; model: string }) =>
+  testSettings: (body: { task: string; provider: string; api_key: string; base_url: string; model: string; headers?: string }) =>
     req<{ ok: boolean; error?: string }>('/api/settings/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

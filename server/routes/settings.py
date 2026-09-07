@@ -1,43 +1,56 @@
 import asyncio
+import base64
+import os
+import tempfile
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .. import db
 from .._sanitizer import sanitize_error_text, sanitize_exception
+from .. import config
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-# M4: 设置字段统一长度上限,防超大值写入;API_KEY 留长一点兼容各类 token。
 _K_MAX = 500
 _URL_MAX = 400
 _MODEL_MAX = 200
 _NAME_MAX = 100
+_HEADER_MAX = 2000
+
+# 1x1 像素透明 PNG base64，用于为视觉模型测试提供最小有效载荷
+_TINY_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
 
 class SettingsUpdate(BaseModel):
     TEXT_PROVIDER_NAME: str = Field("", max_length=_NAME_MAX)
     TEXT_API_KEY: str = Field("", max_length=_K_MAX)
     TEXT_BASE_URL: str = Field("", max_length=_URL_MAX)
     TEXT_MODEL: str = Field("", max_length=_MODEL_MAX)
+    TEXT_HEADERS: str = Field("", max_length=_HEADER_MAX)
 
     IMAGE_PROVIDER_NAME: str = Field("", max_length=_NAME_MAX)
     IMAGE_API_KEY: str = Field("", max_length=_K_MAX)
     IMAGE_BASE_URL: str = Field("", max_length=_URL_MAX)
     IMAGE_MODEL: str = Field("", max_length=_MODEL_MAX)
+    IMAGE_HEADERS: str = Field("", max_length=_HEADER_MAX)
 
     AUDIO_PROVIDER_NAME: str = Field("", max_length=_NAME_MAX)
     AUDIO_API_KEY: str = Field("", max_length=_K_MAX)
     AUDIO_BASE_URL: str = Field("", max_length=_URL_MAX)
     AUDIO_MODEL: str = Field("", max_length=_MODEL_MAX)
+    AUDIO_HEADERS: str = Field("", max_length=_HEADER_MAX)
 
     MERGE_PROVIDER_NAME: str = Field("", max_length=_NAME_MAX)
     MERGE_API_KEY: str = Field("", max_length=_K_MAX)
     MERGE_BASE_URL: str = Field("", max_length=_URL_MAX)
     MERGE_MODEL: str = Field("", max_length=_MODEL_MAX)
+    MERGE_HEADERS: str = Field("", max_length=_HEADER_MAX)
 
     ADMIN_PASSWORD: str = Field("", max_length=200)
 
     AUTO_MERGE_EXISTING_CONFIDENCE: str = "medium"
     AUTO_MERGE_NEW_CONFIDENCE: str = "high"
+
 
 class TestRequest(BaseModel):
     task: str = Field(..., max_length=20)  # text, image, audio, merge
@@ -45,40 +58,51 @@ class TestRequest(BaseModel):
     api_key: str = Field(..., max_length=_K_MAX)
     base_url: str = Field(..., max_length=_URL_MAX)
     model: str = Field(..., max_length=_MODEL_MAX)
+    headers: str = Field("", max_length=_HEADER_MAX)
+
 
 def _validate_base_url(base_url: str) -> str | None:
     """校验 test 端点 base_url:仅允许 http/https、阻断链路本地/云元数据段(169.254.*)。
     localhost 与私网放行(支持本地自建模型);其余不做限制。"""
     import ipaddress, socket
     from urllib.parse import urlparse
-    u = (base_url or "").strip()
-    if not u:
+
+    base_url = (base_url or "").strip()
+    if not base_url:
         return "Base URL 不能为空"
-    try:
-        parsed = urlparse(u)
-    except Exception:
-        return "Base URL 解析失败"
+
+    parsed = urlparse(base_url)
     if parsed.scheme not in ("http", "https"):
-        return f"Base URL 必须是 http/https,不能是 '{parsed.scheme}'"
-    host = parsed.hostname or ""
-    if not host:
-        return "Base URL 缺少主机名"
+        return f"不支持的 URL 协议: {parsed.scheme or '(none)'}, 仅允许 http/https"
+
+    hostname = parsed.hostname or ""
+    if not hostname:
+        return "无效的主机名"
+
+    # 阻断云元数据服务专用段(AWS/GCP/Aliyun 等均为 169.254.169.254)与 IPv6 链路本地
+    # 解析 DNS 看是否指向此类敏感地址
     try:
-        infos = socket.getaddrinfo(host, None)
+        addr_infos = socket.getaddrinfo(hostname, None)
     except socket.gaierror:
-        return f"无法解析主机名 '{host}'"
-    for info in infos:
-        ip = info[4][0]
+        # DNS 暂解析失败(可能是仅限内网的名字服务),暂不阻断,交由后续请求报错
+        addr_infos = []
+
+    for info in addr_infos:
+        ip_str = info[4][0]
         try:
-            addr = ipaddress.ip_address(ip)
+            ip = ipaddress.ip_address(ip_str)
+            if ip.is_link_local:
+                return f"已阻断针对链路本地/元数据地址的请求: {hostname} ({ip_str})"
+            # 明确阻断 169.254.0.0/16
+            if isinstance(ip, ipaddress.IPv4Address) and ip in ipaddress.IPv4Network("169.254.0.0/16"):
+                return f"已阻断针对元数据地址的请求: {hostname} ({ip_str})"
         except ValueError:
-            continue
-        if addr.is_link_local:
-            return f"禁止访问链路本地/云元数据地址 '{ip}'(SSRF 防护)"
+            pass
+
     return None
 
 
-async def test_api_config(task: str, provider: str, api_key: str, base_url: str, model: str) -> str:
+async def test_api_config(task: str, provider: str, api_key: str, base_url: str, model: str, custom_headers: str = "") -> str:
     if not api_key:
         return "API Key 不能为空"
     url_err = _validate_base_url(base_url)
@@ -87,7 +111,7 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
     try:
         import httpx
         from ..pipeline.llm import get_client
-        
+
         provider_name = provider.lower()
         url_lower = (base_url or "").lower()
         if "anthropic" in provider_name or "anthropic" in url_lower:
@@ -95,10 +119,13 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
         else:
             client_type = "openai"
 
-        # Resolve keys and urls locally
-        client = get_client(provider, api_key=api_key, base_url=base_url)
+        # 解析用户自定义与专属请求头
+        resolved_headers = config.resolve_headers(custom_headers, base_url=base_url, provider=provider)
 
-        if task in ("text", "image", "merge"):
+        # 获取已注入 header 的通用客户端
+        client = get_client(provider, api_key=api_key, base_url=base_url, extra_headers=resolved_headers)
+
+        if task in ("text", "merge"):
             def run_chat():
                 if client_type == "openai":
                     return client.chat.completions.create(
@@ -115,11 +142,43 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
                         timeout=10.0
                     )
             await asyncio.to_thread(run_chat)
+
+        elif task == "image":
+            # 视觉模型专用测试分支：附带标准 Base64 图片数据
+            def run_vision():
+                if client_type == "openai":
+                    vision_content = [
+                        {"type": "text", "text": "ping"},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{_TINY_PNG_B64}"}}
+                    ]
+                    return client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": vision_content}],
+                        max_tokens=5,
+                        timeout=15.0
+                    )
+                else:
+                    anthropic_content = [
+                        {"type": "text", "text": "ping"},
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": _TINY_PNG_B64
+                            }
+                        }
+                    ]
+                    return client.messages.create(
+                        model=model,
+                        messages=[{"role": "user", "content": anthropic_content}],
+                        max_tokens=5,
+                        timeout=15.0
+                    )
+            await asyncio.to_thread(run_vision)
+
         elif task == "audio":
-            import tempfile
-            import os
-            
-            # Construct a 100% valid 1-second silence WAV file (8000Hz, 8-bit, Mono PCM)
+            # 生成 1 秒无声音频 WAV 数据 (8000Hz, 8-bit, Mono PCM)
             sample_rate = 8000
             data_size = 8000
             file_size = 44 + data_size
@@ -130,16 +189,15 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
             header[8:12] = b'WAVE'
             header[12:16] = b'fmt '
             header[16:20] = (16).to_bytes(4, 'little')
-            header[20:22] = (1).to_bytes(2, 'little')  # PCM
-            header[22:24] = (1).to_bytes(2, 'little')  # Mono
+            header[20:22] = (1).to_bytes(2, 'little')
+            header[22:24] = (1).to_bytes(2, 'little')
             header[24:28] = sample_rate.to_bytes(4, 'little')
-            header[28:32] = sample_rate.to_bytes(4, 'little')  # Byte rate
-            header[32:34] = (1).to_bytes(2, 'little')  # Block align
-            header[34:36] = (8).to_bytes(2, 'little')  # Bits per sample
+            header[28:32] = sample_rate.to_bytes(4, 'little')
+            header[32:34] = (1).to_bytes(2, 'little')
+            header[34:36] = (8).to_bytes(2, 'little')
             header[36:40] = b'data'
             header[40:44] = data_size.to_bytes(4, 'little')
             
-            # 8-bit PCM silence level is 128 (0x80)
             DUMMY_WAV = bytes(header) + bytes([128] * data_size)
             
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -151,28 +209,32 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
                 is_stt = any(k in model_lower for k in ["whisper", "sensevoice", "funasr"])
 
                 def run_audio():
+                    base_headers = dict(resolved_headers)
+                    base_headers["Authorization"] = f"Bearer {api_key}"
+
                     if is_stt:
                         url = f"{base_url.rstrip('/')}/audio/transcriptions"
-                        headers = {"Authorization": f"Bearer {api_key}"}
+                        headers = base_headers
                         with open(tmp_path, "rb") as f:
                             files = {"file": ("test.wav", f.read(), "audio/wav")}
                         res = httpx.post(url, headers=headers, files=files, data={"model": model}, timeout=15.0)
                         res.raise_for_status()
                     else:
                         url = f"{base_url.rstrip('/')}/chat/completions"
-                        import base64
                         audio_base64 = base64.b64encode(DUMMY_WAV).decode("utf-8")
                         payload = {
                             "model": model,
                             "messages": [{
                                 "role": "user",
                                 "content": [
-                                    {"type": "audio_url", "audio_url": {"url": f"data:audio/wav;base64,{audio_base64}"}},
-                                    {"type": "text", "text": "transcribe"}
+                                    {"type": "text", "text": "transcribe"},
+                                    {"type": "input_audio", "input_audio": {"data": audio_base64, "format": "wav"}}
                                 ]
-                            }]
+                            }],
+                            "max_tokens": 10
                         }
-                        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                        headers = dict(base_headers)
+                        headers["Content-Type"] = "application/json"
                         res = httpx.post(url, headers=headers, json=payload, timeout=15.0)
                         res.raise_for_status()
 
@@ -183,8 +245,8 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
 
         return ""
     except Exception as e:
-        # 不回传上游 SDK 原始异常串(可能含账号/URL/部分 payload),仅回脱敏摘要。
         return sanitize_exception(e)
+
 
 def resolve_key(incoming: str, key_name: str) -> str:
     if incoming == "••••••••":
@@ -192,36 +254,39 @@ def resolve_key(incoming: str, key_name: str) -> str:
         return getattr(config, key_name, "")
     return incoming
 
+
 @router.get("")
 def get_settings():
     from .. import config
     keys = [
         "ADMIN_PASSWORD",
-        "TEXT_PROVIDER_NAME", "TEXT_API_KEY", "TEXT_BASE_URL", "TEXT_MODEL",
-        "IMAGE_PROVIDER_NAME", "IMAGE_API_KEY", "IMAGE_BASE_URL", "IMAGE_MODEL",
-        "AUDIO_PROVIDER_NAME", "AUDIO_API_KEY", "AUDIO_BASE_URL", "AUDIO_MODEL",
-        "MERGE_PROVIDER_NAME", "MERGE_API_KEY", "MERGE_BASE_URL", "MERGE_MODEL",
-        "AUTO_MERGE_EXISTING_CONFIDENCE", "AUTO_MERGE_NEW_CONFIDENCE",
+        "AUTO_MERGE_EXISTING_CONFIDENCE",
+        "AUTO_MERGE_NEW_CONFIDENCE",
+        "TEXT_PROVIDER_NAME", "TEXT_API_KEY", "TEXT_BASE_URL", "TEXT_MODEL", "TEXT_HEADERS",
+        "IMAGE_PROVIDER_NAME", "IMAGE_API_KEY", "IMAGE_BASE_URL", "IMAGE_MODEL", "IMAGE_HEADERS",
+        "AUDIO_PROVIDER_NAME", "AUDIO_API_KEY", "AUDIO_BASE_URL", "AUDIO_MODEL", "AUDIO_HEADERS",
+        "MERGE_PROVIDER_NAME", "MERGE_API_KEY", "MERGE_BASE_URL", "MERGE_MODEL", "MERGE_HEADERS",
     ]
     result = {}
     for k in keys:
         val = getattr(config, k, "")
-        if ("API_KEY" in k or k == "ADMIN_PASSWORD") and val:
+        if "API_KEY" in k and val:
+            result[k] = "••••••••"
+        elif k == "ADMIN_PASSWORD" and val:
             result[k] = "••••••••"
         else:
             result[k] = val
     return result
 
+
 @router.post("")
 async def save_settings(payload: SettingsUpdate):
-    # Validate confidence levels
     allowed_confidences = {"high", "medium", "low", "never"}
     if payload.AUTO_MERGE_EXISTING_CONFIDENCE not in allowed_confidences:
         raise HTTPException(400, f"无效的自动合并置信度(已有主题): {payload.AUTO_MERGE_EXISTING_CONFIDENCE}")
     if payload.AUTO_MERGE_NEW_CONFIDENCE not in allowed_confidences:
         raise HTTPException(400, f"无效的自动合并置信度(新主题): {payload.AUTO_MERGE_NEW_CONFIDENCE}")
 
-    # 密码单独处理:空或掩码→保持不动;非空新值→校验后写入,防止误清空锁死全站
     new_pw = payload.ADMIN_PASSWORD or ""
     if new_pw not in ("", "••••••••"):
         if len(new_pw) < 6:
@@ -230,22 +295,23 @@ async def save_settings(payload: SettingsUpdate):
             raise HTTPException(400, "管理员密码不能使用出厂弱密码 'admin'")
         db.set_setting("ADMIN_PASSWORD", new_pw)
 
-    # Save to SQLite
     data = payload.model_dump()
     for k, v in data.items():
         if k == "ADMIN_PASSWORD":
             continue
         if "API_KEY" in k:
-            db.set_setting(k, resolve_key(v, k))
+            if v and v != "••••••••":
+                db.set_setting(k, v)
         else:
-            db.set_setting(k, v)
+            db.set_setting(k, v or "")
 
     return {"ok": True}
+
 
 @router.post("/test")
 async def test_endpoint(payload: TestRequest):
     resolved_key = resolve_key(payload.api_key, f"{payload.task.upper()}_API_KEY")
-    err = await test_api_config(payload.task, payload.provider, resolved_key, payload.base_url, payload.model)
+    err = await test_api_config(payload.task, payload.provider, resolved_key, payload.base_url, payload.model, payload.headers)
     if err:
         return {"ok": False, "error": err}
     return {"ok": True}

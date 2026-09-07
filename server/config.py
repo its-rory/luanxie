@@ -33,21 +33,25 @@ _STATIC_DEFAULTS = {
     "TEXT_API_KEY": "",
     "TEXT_BASE_URL": "",
     "TEXT_MODEL": "claude-haiku-4-5",
+    "TEXT_HEADERS": "",
     
     "IMAGE_PROVIDER_NAME": "",
     "IMAGE_API_KEY": "",
     "IMAGE_BASE_URL": "",
     "IMAGE_MODEL": "",
+    "IMAGE_HEADERS": "",
     
     "AUDIO_PROVIDER_NAME": "",
     "AUDIO_API_KEY": "",
     "AUDIO_BASE_URL": "https://api.openai.com/v1",
     "AUDIO_MODEL": "whisper-1",
+    "AUDIO_HEADERS": "",
     
     "MERGE_PROVIDER_NAME": "",
     "MERGE_API_KEY": "",
     "MERGE_BASE_URL": "",
     "MERGE_MODEL": "claude-opus-4-8",
+    "MERGE_HEADERS": "",
 
     # 部署在反向代理后才生效的安全开关(见 README)
     "SESSION_COOKIE_SECURE": "auto",   # auto / always / never
@@ -68,6 +72,48 @@ _FALLBACK_MAPS = {
     "TRANSCRIPTION_BASE_URL": "AUDIO_BASE_URL",
     "TRANSCRIPTION_MODEL": "AUDIO_MODEL",
 }
+
+def parse_custom_headers(headers_raw: str | None) -> dict[str, str]:
+    """解析用户在文本框中输入的自定义 Headers，兼容多行 'Key: Value' 或 JSON 格式。"""
+    if not headers_raw or not str(headers_raw).strip():
+        return {}
+    text = str(headers_raw).strip()
+    if text.startswith("{") and text.endswith("}"):
+        try:
+            import json
+            data = json.loads(text)
+            if isinstance(data, dict):
+                return {str(k).strip(): str(v).strip() for k, v in data.items() if k}
+        except Exception:
+            pass
+
+    result = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("//"):
+            continue
+        if ":" in line:
+            k, v = line.split(":", 1)
+            k = k.strip()
+            v = v.strip()
+            if k:
+                result[k] = v
+    return result
+
+
+def resolve_headers(headers_raw: str | None, base_url: str | None = None, provider: str | None = None) -> dict[str, str]:
+    """解析自定义 Headers 并确保供应商专属要求（如 OpenCode Go 的会话路由头）。"""
+    headers = parse_custom_headers(headers_raw)
+    url_lower = (base_url or "").lower()
+    prov_lower = (provider or "").lower()
+    if "opencode" in url_lower or "opencode" in prov_lower:
+        headers_lower = {k.lower() for k in headers}
+        if "x-opencode-session" not in headers_lower:
+            headers["x-opencode-session"] = "luanxie-session-affinity-01"
+        if "x-opencode-client" not in headers_lower:
+            headers["x-opencode-client"] = "luanxie"
+    return headers
+
 
 _last_env_mtime = 0
 _env_lock = threading.Lock()

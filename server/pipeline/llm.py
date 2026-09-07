@@ -1,14 +1,11 @@
-"""LLM 调用薄封装:强制 tool use 拿结构化输出 + Pydantic 校验重试。
-
-支持 Anthropic 协议与 OpenAI 协议双通。
-用 tool use 而非 output_config/messages.parse 的原因:兼容第三方端点普遍支持 tool call,一条代码路径通吃。
-"""
+"""统一 LLM 调用层:按 Provider 分流,强制结构化输出。"""
 import json
+import logging
 from typing import TypeVar
-
-from pydantic import BaseModel, ValidationError
-
+from pydantic import BaseModel
 from .. import config
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -18,14 +15,9 @@ _clients = {}
 _clients_lock = threading.Lock()
 
 # 已知上游工具调用能力登记(影响首发 tool_choice,避免注定失败的 400 往返)。
-# 默认所有 OpenAI 协议上游都支持 forced tool call(硬保证结构化输出);
-# 在此显式登记"不支持 forced/required"的上游,_call_openai 对它们首发 "auto",
-# 由已有的三路兜底解析(tool_calls → reasoning_content 的 <antml:invoke> 提取 → 正文 JSON)保障结构化输出。
-# 例:OpenCode Console Go(DeepSeek-v4 系列等)对 forced tool_choice 直接回 400 "Upstream request failed"。
-# 例:硅基流动 Qwen3-VL 系列(Thinking/Instruct)对 forced/required tool_choice 回 400 code 20015,
-# 其中 Instruct 系列在 auto 下也不产出结构化(请用 Thinking 版本如 Qwen3-VL-8B-Thinking), Thinking 在 auto 下稳定产出 tool_call。
 _NO_FORCED_TOOL_CHOICE_PROVIDERS = (
     "opencodego",
+    "opencode",
     "siliconflow",
 )
 
@@ -36,7 +28,7 @@ def _force_forced_tool_choice(provider: str, base_url: str | None) -> bool:
     return not any(p in key for p in _NO_FORCED_TOOL_CHOICE_PROVIDERS)
 
 
-def get_client(provider: str, api_key: str | None = None, base_url: str | None = None):
+def get_client(provider: str, api_key: str | None = None, base_url: str | None = None, extra_headers: dict | None = None):
     provider_lower = provider.lower()
     url_lower = (base_url or "").lower()
 
@@ -45,66 +37,76 @@ def get_client(provider: str, api_key: str | None = None, base_url: str | None =
     else:
         resolved_type = "openai"
 
+    # 注入与解析路由 Headers
+    default_headers = dict(extra_headers or {})
+    if "opencode" in url_lower or "opencode" in provider_lower:
+        headers_lower = {k.lower() for k in default_headers}
+        if "x-opencode-session" not in headers_lower:
+            default_headers["x-opencode-session"] = "luanxie-session-affinity-01"
+        if "x-opencode-client" not in headers_lower:
+            default_headers["x-opencode-client"] = "luanxie"
+
+    headers_cache_key = tuple(sorted(default_headers.items()))
+
     if resolved_type == "openai":
         resolved_key = api_key or config.OPENAI_API_KEY or None
         resolved_url = base_url or config.OPENAI_BASE_URL or None
-        cache_key = ("openai", resolved_key, resolved_url)
+        cache_key = ("openai", resolved_key, resolved_url, headers_cache_key)
         with _clients_lock:
             if cache_key not in _clients:
                 import openai
                 _clients[cache_key] = openai.OpenAI(
                     api_key=resolved_key,
-                    base_url=resolved_url
+                    base_url=resolved_url,
+                    default_headers=default_headers or None
                 )
             return _clients[cache_key]
+
     elif resolved_type == "anthropic":
         resolved_key = api_key or config.ANTHROPIC_API_KEY or None
         resolved_url = base_url or config.ANTHROPIC_BASE_URL or None
-        cache_key = ("anthropic", resolved_key, resolved_url)
+        cache_key = ("anthropic", resolved_key, resolved_url, headers_cache_key)
         with _clients_lock:
             if cache_key not in _clients:
                 import anthropic
                 _clients[cache_key] = anthropic.Anthropic(
                     api_key=resolved_key,
-                    base_url=resolved_url
+                    base_url=resolved_url,
+                    default_headers=default_headers or None
                 )
             return _clients[cache_key]
     else:
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
 
-def _flatten_system(system) -> str:
-    """将 Anthropic 列表格式的 system prompt 扁平化为纯文本字符串以兼容 OpenAI。"""
+def _flatten_system(system: list | str) -> str:
+    """OpenAI 协议仅支持单段 string system prompt,将列表压平。"""
     if isinstance(system, str):
         return system
-    elif isinstance(system, list):
-        parts = []
-        for block in system:
-            if isinstance(block, dict) and block.get("type") == "text":
-                parts.append(block.get("text", ""))
-            elif isinstance(block, str):
-                parts.append(block)
-        return "\n\n".join(parts)
-    return ""
+    chunks = []
+    for block in system:
+        if isinstance(block, dict) and "text" in block:
+            chunks.append(block["text"])
+        elif isinstance(block, str):
+            chunks.append(block)
+    return "\n\n".join(chunks)
 
 
 def _convert_content_to_openai(content):
-    """将 Anthropic 格式的 image 块转换为 OpenAI 格式。"""
+    """Anthropic 格式的 image content block 转 OpenAI 格式。"""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
         new_content = []
         for block in content:
-            if isinstance(block, dict):
-                if block.get("type") == "image":
-                    source = block.get("source", {})
-                    media_type = source.get("media_type", "image/jpeg")
-                    data = source.get("data", "")
+            if isinstance(block, dict) and block.get("type") == "image":
+                src = block.get("source", {})
+                if src.get("type") == "base64":
+                    media_type = src.get("media_type", "image/jpeg")
+                    data = src.get("data", "")
                     new_content.append({
                         "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{media_type};base64,{data}"
-                        }
+                        "image_url": {"url": f"data:{media_type};base64,{data}"}
                     })
                 else:
                     new_content.append(block)
@@ -115,51 +117,64 @@ def _convert_content_to_openai(content):
 
 
 def _call_anthropic(*, client, model: str, system: list | str, content, schema: type[T],
-                     tool_name: str, tool_description: str,
-                     max_tokens: int = 4096) -> tuple[T, dict]:
+                    tool_name: str, tool_description: str,
+                    max_tokens: int = 4096) -> tuple[T, dict]:
     tool = {
         "name": tool_name,
         "description": tool_description,
         "input_schema": schema.model_json_schema(),
     }
     messages = [{"role": "user", "content": content}]
+
     last_err: Exception | None = None
     for _ in range(2):
         response = client.messages.create(
             model=model,
             max_tokens=max_tokens,
             system=system,
-            messages=messages,
             tools=[tool],
             tool_choice={"type": "tool", "name": tool_name},
+            messages=messages,
         )
         usage = {
             "input_tokens": response.usage.input_tokens,
             "output_tokens": response.usage.output_tokens,
-            "cache_read": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+            "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
+            "cache_read_input_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
         }
-        tool_use = next((b for b in response.content if b.type == "tool_use"), None)
-        if tool_use is None:
-            last_err = ValueError("模型未返回 tool_use 块")
-            continue
-        try:
-            return schema.model_validate(tool_use.input), usage
-        except ValidationError as e:
-            last_err = e
+        for block in response.content:
+            if block.type == "tool_use" and block.name == tool_name:
+                try:
+                    return schema.model_validate(block.input), usage
+                except Exception as e:
+                    last_err = e
+                    messages = messages + [
+                        {"role": "assistant", "content": response.content},
+                        {"role": "user", "content": [
+                            {"type": "tool_result", "tool_use_id": block.id,
+                             "content": f"参数校验失败,请重新调用 {tool_name}: {e}",
+                             "is_error": True}]},
+                    ]
+                    break
+        else:
+            last_err = ValueError(f"模型未调用预期的 {tool_name} 工具")
+            tool_use = [b for b in response.content if b.type == "tool_use"]
+            if not tool_use:
+                raise last_err
             messages = messages + [
                 {"role": "assistant", "content": response.content},
                 {"role": "user", "content": [
-                    {"type": "tool_result", "tool_use_id": tool_use.id,
-                     "content": f"参数校验失败,请重新调用 {tool_name}: {e}",
+                    {"type": "tool_result", "tool_use_id": tool_use[0].id,
+                     "content": f"参数校验失败,请重新调用 {tool_name}: {last_err}",
                      "is_error": True}]},
             ]
-    raise last_err  # type: ignore[misc]
+    raise last_err
 
 
 def _call_openai(*, client, model: str, system: list | str, content, schema: type[T],
-                  tool_name: str, tool_description: str,
-                  max_tokens: int = 4096,
-                  force_tool_choice: bool = True) -> tuple[T, dict]:
+                 tool_name: str, tool_description: str,
+                 max_tokens: int = 4096,
+                 force_tool_choice: bool = True) -> tuple[T, dict]:
     system_text = _flatten_system(system)
     openai_content = _convert_content_to_openai(content)
 
@@ -171,14 +186,12 @@ def _call_openai(*, client, model: str, system: list | str, content, schema: typ
             "parameters": schema.model_json_schema(),
         }
     }
-
     messages = [
         {"role": "system", "content": system_text},
         {"role": "user", "content": openai_content}
     ]
 
     import openai
-    # tool_choice 取值表;tc_mode 跟踪"当前已降级到的最低档",跨校验重试轮次保留,避免重复打注定失败的 forced 请求。
     tc_values = {
         "forced": {"type": "function", "function": {"name": tool_name}},
         "required": "required",
@@ -193,8 +206,6 @@ def _call_openai(*, client, model: str, system: list | str, content, schema: typ
         )
 
     def _chat_with_degrade():
-        # 从当前 tc_mode 起,若上游对该 tool_choice 返回 400,逐级降级 forced→required→auto。
-        # 安全网:不依赖 provider 报错文案匹配(避免如 "Upstream request failed" 这类文案踩空导致无法降级)。
         nonlocal tc_mode
         modes = {
             "forced": ["forced", "required", "auto"],
@@ -207,18 +218,16 @@ def _call_openai(*, client, model: str, system: list | str, content, schema: typ
                 return _create(tc_values[m])
             except openai.BadRequestError:
                 if m == "auto":
-                    raise  # 已无可降级档位,抛出让上层处理
+                    raise
                 continue
-        # 不可达
 
     last_err: Exception | None = None
     for _ in range(2):
         response = _chat_with_degrade()
 
         usage = {
-            "input_tokens": response.usage.prompt_tokens,
-            "output_tokens": response.usage.completion_tokens,
-            "cache_read": 0,
+            "input_tokens": response.usage.prompt_tokens if response.usage else 0,
+            "output_tokens": response.usage.completion_tokens if response.usage else 0,
         }
 
         message = response.choices[0].message
@@ -226,14 +235,12 @@ def _call_openai(*, client, model: str, system: list | str, content, schema: typ
         tool_call = tool_calls[0] if tool_calls else None
 
         json_data = None
-        # 1. 尝试从正式的 tool_calls 中解析
         if tool_call is not None and tool_call.function.name == tool_name:
             try:
                 json_data = json.loads(tool_call.function.arguments)
             except Exception as e:
                 last_err = e
 
-        # 2. 尝试从 reasoning_content (推理思考内容) 中提取 XML 格式的 tool_call
         reasoning = getattr(message, "reasoning_content", None) or ""
         if json_data is None and reasoning:
             r_text = reasoning.strip()
@@ -242,19 +249,16 @@ def _call_openai(*, client, model: str, system: list | str, content, schema: typ
             start_idx = r_text.find(start_tag)
             end_idx = r_text.find(end_tag)
             if start_idx != -1 and end_idx != -1:
-                json_str = r_text[start_idx + len(start_tag):end_idx].strip()
+                call_json_str = r_text[start_idx + len(start_tag):end_idx].strip()
                 try:
-                    raw_json = json.loads(json_str)
-                    if isinstance(raw_json, dict) and "arguments" in raw_json:
+                    raw_json = json.loads(call_json_str)
+                    if "arguments" in raw_json:
                         json_data = raw_json["arguments"]
-                        if isinstance(json_data, str):
-                            json_data = json.loads(json_data)
                     else:
                         json_data = raw_json
                 except Exception as e:
                     last_err = e
 
-        # 3. 尝试从正文 content 中提取 (包括 XML 格式和标准 JSON 格式)
         if json_data is None and message.content:
             text = message.content.strip()
             start_tag = "<tool_call>"
@@ -262,19 +266,16 @@ def _call_openai(*, client, model: str, system: list | str, content, schema: typ
             start_idx = text.find(start_tag)
             end_idx = text.find(end_tag)
             if start_idx != -1 and end_idx != -1:
-                json_str = text[start_idx + len(start_tag):end_idx].strip()
+                call_json_str = text[start_idx + len(start_tag):end_idx].strip()
                 try:
-                    raw_json = json.loads(json_str)
-                    if isinstance(raw_json, dict) and "arguments" in raw_json:
+                    raw_json = json.loads(call_json_str)
+                    if "arguments" in raw_json:
                         json_data = raw_json["arguments"]
-                        if isinstance(json_data, str):
-                            json_data = json.loads(json_data)
                     else:
                         json_data = raw_json
                 except Exception as e:
                     last_err = e
             else:
-                # 寻找标准的 JSON 边界 { 和 }
                 start = text.find("{")
                 end = text.rfind("}")
                 if start != -1 and end != -1:
@@ -284,7 +285,6 @@ def _call_openai(*, client, model: str, system: list | str, content, schema: typ
                         last_err = e
 
         if json_data is None:
-            # 不再把完整 message 对象塞进异常(可能含上游 URL/账号/正文),仅保留可定位的事实。
             finish = getattr(response.choices[0], "finish_reason", "?") if response else "?"
             last_err = ValueError(
                 f"模型未返回预期的 tool_call 函数调用，且正文中未包含有效 JSON "
@@ -295,11 +295,11 @@ def _call_openai(*, client, model: str, system: list | str, content, schema: typ
 
         try:
             return schema.model_validate(json_data), usage
-        except (ValidationError, json.JSONDecodeError) as e:
+        except Exception as e:
             last_err = e
             tc_id = tool_call.id if tool_call else "call_fallback"
-            tc_name = tool_call.function.name if (tool_call and getattr(tool_call, "function", None)) else tool_name
-            tc_args = tool_call.function.arguments if (tool_call and getattr(tool_call, "function", None)) else json.dumps(json_data)
+            tc_name = tool_call.function.name if tool_call else tool_name
+            tc_args = tool_call.function.arguments if tool_call else json.dumps(json_data, ensure_ascii=False)
             messages = messages + [
                 {
                     "role": "assistant",
@@ -329,7 +329,8 @@ def call_structured(*, model: str, system: list | str, content, schema: type[T],
                     max_tokens: int = 4096,
                     provider: str | None = None,
                     api_key: str | None = None,
-                    base_url: str | None = None) -> tuple[T, dict]:
+                    base_url: str | None = None,
+                    extra_headers: dict | None = None) -> tuple[T, dict]:
     """强制模型调用一个'提交结果'工具,返回 (校验后的对象, 用量)。校验失败自动重试一次。"""
     resolved_provider = provider
     if not resolved_provider:
@@ -349,7 +350,18 @@ def call_structured(*, model: str, system: list | str, content, schema: type[T],
     else:
         client_type = "openai"
 
-    client = get_client(resolved_provider, api_key=api_key, base_url=base_url)
+    # 如果没有显式传 extra_headers，尝试匹配任务配置
+    if extra_headers is None:
+        for task_pfx in ("TEXT", "IMAGE", "MERGE", "AUDIO"):
+            cfg_url = getattr(config, f"{task_pfx}_BASE_URL", "")
+            cfg_prov = getattr(config, f"{task_pfx}_PROVIDER_NAME", "")
+            if (base_url and base_url == cfg_url) or (resolved_provider and resolved_provider == cfg_prov.lower()):
+                raw_h = getattr(config, f"{task_pfx}_HEADERS", "")
+                if raw_h:
+                    extra_headers = config.parse_custom_headers(raw_h)
+                    break
+
+    client = get_client(resolved_provider, api_key=api_key, base_url=base_url, extra_headers=extra_headers)
 
     if client_type == "openai":
         return _call_openai(
