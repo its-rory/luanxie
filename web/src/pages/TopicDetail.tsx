@@ -642,12 +642,6 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                       <>
                         <button 
                           className="action-btn" 
-                          onClick={() => toggleCapVersions(cap.id)}
-                        >
-                          {capVerState.show ? '收起历史' : `历史(${cap.version || 0})`}
-                        </button>
-                        <button 
-                          className="action-btn" 
                           onClick={() => handleStartEditCapture(cap)}
                         >
                           编辑
@@ -801,6 +795,21 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                   </div>
                 )}
 
+                {/* Sub-card footer */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', borderTop: '1px solid var(--line)', paddingTop: '8px', fontSize: '11px', color: 'var(--ink-faint)' }}>
+                  <span>生成时间: {timeStr}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {cap.version !== undefined && <span>当前版本: v{cap.version}</span>}
+                    <button 
+                      className="action-btn" 
+                      onClick={() => toggleCapVersions(cap.id)}
+                      style={{ height: '22px', padding: '0 8px', fontSize: '11px', borderRadius: '4px' }}
+                    >
+                      {capVerState.show ? '收起历史' : `历史(${cap.version || 0})`}
+                    </button>
+                  </div>
+                </div>
+
                 {/* Sub-card Version History */}
                 {capVerState.show && (
                   <div style={{ marginTop: '8px', background: 'var(--paper-deep)', padding: '10px 12px', borderRadius: '8px', border: '1px dashed var(--line)' }}>
@@ -839,12 +848,6 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                     )}
                   </div>
                 )}
-
-                {/* Sub-card footer */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', borderTop: '1px solid var(--line)', paddingTop: '8px', fontSize: '11px', color: 'var(--ink-faint)' }}>
-                  <span>生成时间: {timeStr}</span>
-                  {cap.version !== undefined && <span>当前版本: v{cap.version}</span>}
-                </div>
               </div>
             )
           })
