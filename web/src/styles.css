@@ -58,7 +58,7 @@ nav.tabs {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid var(--line);
-  display: flex; justify-content: center; align-items: center; gap: 10px;
+  display: flex; justify-content: space-around; align-items: center;
   padding: 8px 12px calc(var(--safe-bottom) + 8px);
   z-index: 30;
   max-width: 640px;

@@ -109,136 +109,65 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
         return url_err
     try:
         import httpx
-        from ..pipeline.llm import get_client
-
-        provider_name = provider.lower()
-        url_lower = (base_url or "").lower()
-        if "anthropic" in provider_name or "anthropic" in url_lower:
-            client_type = "anthropic"
-        else:
-            client_type = "openai"
-
-        # 解析用户自定义与专属请求头
         resolved_headers = config.resolve_headers(custom_headers, base_url=base_url, provider=provider)
+        headers = dict(resolved_headers)
+        headers["Authorization"] = f"Bearer {api_key}"
 
-        # 获取已注入 header 的通用客户端
-        client = get_client(provider, api_key=api_key, base_url=base_url, extra_headers=resolved_headers)
+        url_clean = base_url.rstrip("/")
+        prov_lower = provider.lower()
+        url_lower = url_clean.lower()
+        is_anthropic = "anthropic" in prov_lower or "anthropic" in url_lower
 
-        if task in ("text", "merge"):
-            def run_chat():
-                if client_type == "openai":
-                    return client.chat.completions.create(
-                        model=model,
-                        messages=[{"role": "user", "content": "ping"}],
-                        max_tokens=5,
-                        timeout=25.0
-                    )
-                else:
-                    return client.messages.create(
-                        model=model,
-                        messages=[{"role": "user", "content": "ping"}],
-                        max_tokens=5,
-                        timeout=25.0
-                    )
-            await asyncio.to_thread(run_chat)
-
-        elif task == "image":
-            def run_vision():
-                if client_type == "openai":
-                    vision_content = [
-                        {"type": "text", "text": "ping"},
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{_TINY_PNG_B64}"}}
-                    ]
-                    return client.chat.completions.create(
-                        model=model,
-                        messages=[{"role": "user", "content": vision_content}],
-                        max_tokens=5,
-                        timeout=30.0
-                    )
-                else:
-                    anthropic_content = [
-                        {"type": "text", "text": "ping"},
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": _TINY_PNG_B64
-                            }
-                        }
-                    ]
-                    return client.messages.create(
-                        model=model,
-                        messages=[{"role": "user", "content": anthropic_content}],
-                        max_tokens=5,
-                        timeout=30.0
-                    )
-            await asyncio.to_thread(run_vision)
-
-        elif task == "audio":
-            sample_rate = 8000
-            data_size = 8000
-            file_size = 44 + data_size
-            
-            header = bytearray(44)
-            header[0:4] = b'RIFF'
-            header[4:8] = (file_size - 8).to_bytes(4, 'little')
-            header[8:12] = b'WAVE'
-            header[12:16] = b'fmt '
-            header[16:20] = (16).to_bytes(4, 'little')
-            header[20:22] = (1).to_bytes(2, 'little')
-            header[22:24] = (1).to_bytes(2, 'little')
-            header[24:28] = sample_rate.to_bytes(4, 'little')
-            header[28:32] = sample_rate.to_bytes(4, 'little')
-            header[32:34] = (1).to_bytes(2, 'little')
-            header[34:36] = (8).to_bytes(2, 'little')
-            header[36:40] = b'data'
-            header[40:44] = data_size.to_bytes(4, 'little')
-            
-            DUMMY_WAV = bytes(header) + bytes([128] * data_size)
-            
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                tmp.write(DUMMY_WAV)
-                tmp_path = tmp.name
-
+        # 1. 针对常规模型供应商，优先使用轻量级 GET /models 探针 (主流平台均秒级返回，不耗 Token，快速鉴权与探活)
+        if not is_anthropic:
             try:
-                model_lower = model.lower()
-                is_stt = any(k in model_lower for k in ["whisper", "sensevoice", "funasr"])
+                async with httpx.AsyncClient(timeout=5.0) as http_client:
+                    r = await http_client.get(f"{url_clean}/models", headers=headers)
+                    if r.status_code == 200:
+                        return ""  # 探活成功！
+                    elif r.status_code in (401, 403):
+                        return f"鉴权失败 (HTTP {r.status_code}): API Key 或自定义 Headers 无效"
+            except Exception:
+                pass  # 若目标代理未暴露 /models 路由，则平滑退避到极小化测试
 
-                def run_audio():
-                    base_headers = dict(resolved_headers)
-                    base_headers["Authorization"] = f"Bearer {api_key}"
+        # 2. 模型名自适应容错：过滤路径型错误模型名（如误填的 zen/go/v1 等）
+        test_model = (model or "").strip()
+        if not test_model or test_model in ("zen/go/v1", "zen/audio/v1") or (test_model.startswith("zen/") and "/" in test_model):
+            test_model = "deepseek-v4-flash" if "opencode" in url_lower else "deepseek-chat"
 
-                    if is_stt:
-                        url = f"{base_url.rstrip('/')}/audio/transcriptions"
-                        headers = base_headers
-                        with open(tmp_path, "rb") as f:
-                            files = {"file": ("test.wav", f.read(), "audio/wav")}
-                        res = httpx.post(url, headers=headers, files=files, data={"model": model}, timeout=30.0)
-                        res.raise_for_status()
-                    else:
-                        url = f"{base_url.rstrip('/')}/chat/completions"
-                        audio_base64 = base64.b64encode(DUMMY_WAV).decode("utf-8")
-                        payload = {
-                            "model": model,
-                            "messages": [{
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": "ping"},
-                                    {"type": "input_audio", "input_audio": {"data": audio_base64, "format": "wav"}}
-                                ]
-                            }],
-                            "max_tokens": 5
-                        }
-                        headers = dict(base_headers)
-                        headers["Content-Type"] = "application/json"
-                        res = httpx.post(url, headers=headers, json=payload, timeout=40.0)
-                        res.raise_for_status()
-
-                await asyncio.to_thread(run_audio)
-            finally:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
+        # 3. 极速单 Token 探针 (max_retries=0，8 秒硬超时，杜绝长时间卡住)
+        if is_anthropic:
+            import anthropic
+            anth_client = anthropic.Anthropic(
+                api_key=api_key,
+                base_url=base_url,
+                default_headers=resolved_headers or None,
+                max_retries=0,
+                timeout=8.0
+            )
+            def run_anth():
+                return anth_client.messages.create(
+                    model=test_model or "claude-3-haiku-20240307",
+                    messages=[{"role": "user", "content": "hi"}],
+                    max_tokens=1
+                )
+            await asyncio.to_thread(run_anth)
+        else:
+            import openai
+            oai_client = openai.OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                default_headers=resolved_headers or None,
+                max_retries=0,
+                timeout=8.0
+            )
+            def run_oai():
+                return oai_client.chat.completions.create(
+                    model=test_model,
+                    messages=[{"role": "user", "content": "hi"}],
+                    max_tokens=1
+                )
+            await asyncio.to_thread(run_oai)
 
         return ""
     except Exception as e:

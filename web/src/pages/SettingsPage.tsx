@@ -160,7 +160,10 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                 apiKey: p.apiKey || '',
                 protocol: p.protocol || 'openai-completions',
                 headers: p.headers || '',
-                models: models.length > 0 ? models : ['deepseek-v4-flash'],
+                models: (() => {
+                  const cleaned = models.filter(m => m !== 'zen/go/v1' && m !== 'zen/audio/v1')
+                  return cleaned.length > 0 ? cleaned : ['deepseek-v4-flash']
+                })(),
                 active: Boolean(p.active),
               }
             })
@@ -180,7 +183,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
             apiKey: data.AUDIO_API_KEY || '',
             protocol: 'openai-completions',
             headers: data.AUDIO_HEADERS || 'x-opencode-session: luanxie-session-affinity-01\nx-opencode-client: luanxie',
-            models: ['zen/go/v1', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'mimo-v2.5'],
+            models: ['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'mimo-v2.5'],
             active: true,
           },
           {
