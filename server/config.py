@@ -54,6 +54,7 @@ _STATIC_DEFAULTS = {
     "MERGE_HEADERS": "",
 
     "MODEL_PROVIDERS": "",
+    "MODEL_GROUPS": "",
 
     # 部署在反向代理后才生效的安全开关(见 README)
     "SESSION_COOKIE_SECURE": "auto",   # auto / always / never

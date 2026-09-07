@@ -47,6 +47,7 @@ class SettingsUpdate(BaseModel):
     MERGE_HEADERS: str = Field("", max_length=_HEADER_MAX)
 
     MODEL_PROVIDERS: str = Field("", max_length=50000)
+    MODEL_GROUPS: str = Field("", max_length=10000)
 
     ADMIN_PASSWORD: str = Field("", max_length=200)
 
@@ -263,6 +264,7 @@ def get_settings():
         "AUDIO_PROVIDER_NAME", "AUDIO_API_KEY", "AUDIO_BASE_URL", "AUDIO_MODEL", "AUDIO_HEADERS",
         "MERGE_PROVIDER_NAME", "MERGE_API_KEY", "MERGE_BASE_URL", "MERGE_MODEL", "MERGE_HEADERS",
         "MODEL_PROVIDERS",
+        "MODEL_GROUPS",
     ]
     result = {}
     for k in keys:

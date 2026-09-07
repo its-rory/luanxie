@@ -11,12 +11,12 @@ import ErrorBoundary from './components/ErrorBoundary'
 
 export type Tab = 'capture' | 'inbox' | 'review' | 'topics' | 'settings'
 
-const TABS: { key: Tab; glyph: string; label: string }[] = [
-  { key: 'capture', glyph: '写', label: '乱写' },
-  { key: 'inbox', glyph: '件', label: '收件箱' },
-  { key: 'review', glyph: '审', label: '待确认' },
-  { key: 'topics', glyph: '库', label: '知识库' },
-  { key: 'settings', glyph: '设', label: '设置' },
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'capture', label: '首页' },
+  { key: 'inbox', label: '收件箱' },
+  { key: 'review', label: '待确认' },
+  { key: 'topics', label: '知识库' },
+  { key: 'settings', label: '设置' },
 ]
 
 export default function App() {
@@ -45,20 +45,17 @@ export default function App() {
     api.review().then((items) => setReviewCount(items.length)).catch(() => {})
   }, [loggedIn])
 
-  // 收件箱在途作业红点:排队/转写/归类/合并中的任务数
   const refreshInboxWorkingCount = useCallback(() => {
     if (!loggedIn) return
     api.workingCount().then((res) => setInboxWorkingCount(res.count)).catch(() => {})
   }, [loggedIn])
 
-  // Check login status on mount
   useEffect(() => {
     api.me()
       .then((res) => setLoggedIn(res.logged_in))
       .catch(() => setLoggedIn(false))
   }, [])
 
-  // Setup EventSource subscription only when logged in
   useEffect(() => {
     if (!loggedIn) return
 
@@ -66,11 +63,8 @@ export default function App() {
     refreshInboxWorkingCount()
     const unsubscribe = subscribeEvents((ev) => {
       setTick((t) => t + 1)
-      // 任何 capture 离开 awaiting_review(改派/批准 → merging → done,拒绝 → rejected)都刷新待确认计数,
-      // 否则点确认进入 merging 后红点不消失。
       if (ev.kind === 'capture') {
         refreshReviewCount()
-        // 在途作业数随 capture 状态变化而增减(收录→pending,各阶段→..., done/awaiting_review→移出)
         refreshInboxWorkingCount()
       }
     })
@@ -88,12 +82,10 @@ export default function App() {
     setTab('topics')
   }, [])
 
-  // 1. Loading state
   if (loggedIn === null) {
     return <div className="empty">加载中...</div>
   }
 
-  // 2. Not logged in state
   if (loggedIn === false) {
     return (
       <>
@@ -103,7 +95,6 @@ export default function App() {
     )
   }
 
-  // 3. Logged in state
   return (
     <>
       <header className="masthead">
@@ -130,10 +121,15 @@ export default function App() {
       </main>
       <nav className="tabs">
         {TABS.map((t) => (
-          <button key={t.key} className={tab === t.key ? 'active' : ''}
-            onClick={() => { setTab(t.key); if (t.key !== 'topics') setTopicId(null) }}>
-            <span className="glyph">{t.glyph}</span>
-            {t.label}
+          <button
+            key={t.key}
+            className={tab === t.key ? 'active' : ''}
+            onClick={() => {
+              setTab(t.key)
+              if (t.key !== 'topics') setTopicId(null)
+            }}
+          >
+            <span className="tab-label">{t.label}</span>
             {t.key === 'review' && reviewCount > 0 && <span className="badge">{reviewCount}</span>}
             {t.key === 'inbox' && inboxWorkingCount > 0 && <span className="badge">{inboxWorkingCount}</span>}
           </button>

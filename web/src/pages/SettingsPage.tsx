@@ -9,13 +9,15 @@ export interface ModelProvider {
   apiKey: string
   protocol: 'openai-completions' | 'anthropic-messages'
   headers: string
-  models: {
-    text: string
-    image: string
-    audio: string
-    merge: string
-  }
-  active: boolean
+  models: string[]
+  active?: boolean
+}
+
+export interface ModelGroupsConfig {
+  text: { providerId: string; model: string }
+  image: { providerId: string; model: string }
+  audio: { providerId: string; model: string }
+  merge: { providerId: string; model: string }
 }
 
 interface SettingsState {
@@ -44,6 +46,7 @@ interface SettingsState {
   MERGE_HEADERS: string
 
   MODEL_PROVIDERS: string
+  MODEL_GROUPS: string
 
   ADMIN_PASSWORD: string
 
@@ -53,11 +56,12 @@ interface SettingsState {
 
 export default function SettingsPage({ showToast, onLogout }: { showToast: (m: string) => void; onLogout: () => void }) {
   const [health, setHealth] = useState<Health | null>(null)
-  const [showModal, setShowModal] = useState(false)
+  const [showApiModal, setShowApiModal] = useState(false)
+  const [showGroupsModal, setShowGroupsModal] = useState(false)
   const [loadingSettings, setLoadingSettings] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  // 原始设置
+  // 原始设置数据
   const [rawSettings, setRawSettings] = useState<SettingsState>({
     TEXT_PROVIDER_NAME: '',
     TEXT_API_KEY: '',
@@ -80,19 +84,29 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     MERGE_MODEL: '',
     MERGE_HEADERS: '',
     MODEL_PROVIDERS: '',
+    MODEL_GROUPS: '',
     ADMIN_PASSWORD: '',
     AUTO_MERGE_EXISTING_CONFIDENCE: 'medium',
     AUTO_MERGE_NEW_CONFIDENCE: 'high',
   })
 
-  // 管理员密码临时输入
+  // 管理员密码临时编辑
   const [adminPassword, setAdminPassword] = useState('')
 
   // 供应商列表
   const [providers, setProviders] = useState<ModelProvider[]>([])
 
-  // 当前正在编辑的供应商（null 表示未展开编辑，'new' 表示新建，其他为编辑对应 id）
+  // 模型分组设置
+  const [modelGroups, setModelGroups] = useState<ModelGroupsConfig>({
+    text: { providerId: '', model: '' },
+    image: { providerId: '', model: '' },
+    audio: { providerId: '', model: '' },
+    merge: { providerId: '', model: '' },
+  })
+
+  // 当前正在编辑的供应商（null 表示未展开编辑，'new' 表示新建，其余为编辑指定 id）
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
+  const [newModelInput, setNewModelInput] = useState('')
   const [providerForm, setProviderForm] = useState<ModelProvider>({
     id: '',
     name: '',
@@ -100,12 +114,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     apiKey: '',
     protocol: 'openai-completions',
     headers: '',
-    models: {
-      text: '',
-      image: '',
-      audio: '',
-      merge: '',
-    },
+    models: [],
     active: false,
   })
 
@@ -121,40 +130,57 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
 
   useEffect(() => {
     loadHealth()
+    fetchSettings()
   }, [])
 
-  const openConfigModal = async () => {
+  const fetchSettings = async () => {
     setLoadingSettings(true)
     try {
       const data = (await api.getSettings()) as any
       setRawSettings(data)
       setAdminPassword(data.ADMIN_PASSWORD || '')
 
+      // 1. 解析模型供应商
       let parsedProviders: ModelProvider[] = []
       if (data.MODEL_PROVIDERS) {
         try {
-          parsedProviders = JSON.parse(data.MODEL_PROVIDERS)
+          const raw = JSON.parse(data.MODEL_PROVIDERS)
+          if (Array.isArray(raw)) {
+            parsedProviders = raw.map((p: any) => {
+              let models: string[] = []
+              if (Array.isArray(p.models)) {
+                models = p.models.map((m: any) => String(m).trim()).filter(Boolean)
+              } else if (p.models && typeof p.models === 'object') {
+                models = Array.from(new Set(Object.values(p.models).map((m: any) => String(m).trim()).filter(Boolean))) as string[]
+              }
+              return {
+                id: p.id || '',
+                name: p.name || '',
+                baseUrl: p.baseUrl || '',
+                apiKey: p.apiKey || '',
+                protocol: p.protocol || 'openai-completions',
+                headers: p.headers || '',
+                models: models.length > 0 ? models : ['deepseek-v4-flash'],
+                active: Boolean(p.active),
+              }
+            })
+          }
         } catch {
           parsedProviders = []
         }
       }
 
-      // 如果未存储过提供商列表，从当前已有配置生成默认提供方
+      // 若未存储供应商列表，则添加默认的 opencode-go 与 deepseek 模版
       if (!parsedProviders || parsedProviders.length === 0) {
         parsedProviders = [
           {
             id: 'opencode-go',
-            name: 'opencode-go',
+            name: 'OpenCode Go',
             baseUrl: data.AUDIO_BASE_URL || 'https://opencode.ai/zen/go/v1',
             apiKey: data.AUDIO_API_KEY || '',
             protocol: 'openai-completions',
             headers: data.AUDIO_HEADERS || 'x-opencode-session: luanxie-session-affinity-01\nx-opencode-client: luanxie',
-            models: {
-              text: data.TEXT_MODEL || 'deepseek-v4-flash',
-              image: data.IMAGE_MODEL || 'deepseek-v4-flash-vision-exp',
-              audio: data.AUDIO_MODEL || 'mimo-v2.5',
-              merge: data.MERGE_MODEL || 'deepseek-v4-flash',
-            },
+            models: ['zen/go/v1', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'mimo-v2.5'],
             active: true,
           },
           {
@@ -164,23 +190,54 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
             apiKey: '',
             protocol: 'openai-completions',
             headers: '',
-            models: {
-              text: 'deepseek-chat',
-              image: 'deepseek-chat',
-              audio: 'whisper-1',
-              merge: 'deepseek-chat',
-            },
+            models: ['deepseek-chat', 'deepseek-reasoner'],
             active: false,
           },
         ]
       }
-
       setProviders(parsedProviders)
-      setEditingProviderId(null)
-      setTestState({ status: 'idle', message: '' })
-      setShowModal(true)
+
+      // 2. 解析模型分组
+      let parsedGroups: ModelGroupsConfig = {
+        text: { providerId: '', model: '' },
+        image: { providerId: '', model: '' },
+        audio: { providerId: '', model: '' },
+        merge: { providerId: '', model: '' },
+      }
+
+      if (data.MODEL_GROUPS) {
+        try {
+          parsedGroups = JSON.parse(data.MODEL_GROUPS)
+        } catch {}
+      }
+
+      const matchProvider = (nameOrId: string, baseUrl: string) => {
+        return (
+          parsedProviders.find(p => p.name === nameOrId || p.id === nameOrId || (baseUrl && p.baseUrl === baseUrl)) ||
+          parsedProviders[0]
+        )
+      }
+
+      if (!parsedGroups.text?.providerId && parsedProviders.length > 0) {
+        const p = matchProvider(data.TEXT_PROVIDER_NAME, data.TEXT_BASE_URL)
+        parsedGroups.text = { providerId: p.id, model: data.TEXT_MODEL || p.models[0] || '' }
+      }
+      if (!parsedGroups.image?.providerId && parsedProviders.length > 0) {
+        const p = matchProvider(data.IMAGE_PROVIDER_NAME, data.IMAGE_BASE_URL)
+        parsedGroups.image = { providerId: p.id, model: data.IMAGE_MODEL || p.models[0] || '' }
+      }
+      if (!parsedGroups.audio?.providerId && parsedProviders.length > 0) {
+        const p = matchProvider(data.AUDIO_PROVIDER_NAME, data.AUDIO_BASE_URL)
+        parsedGroups.audio = { providerId: p.id, model: data.AUDIO_MODEL || p.models[0] || '' }
+      }
+      if (!parsedGroups.merge?.providerId && parsedProviders.length > 0) {
+        const p = matchProvider(data.MERGE_PROVIDER_NAME, data.MERGE_BASE_URL)
+        parsedGroups.merge = { providerId: p.id, model: data.MERGE_MODEL || p.models[0] || '' }
+      }
+
+      setModelGroups(parsedGroups)
     } catch (e) {
-      showToast('获取 API 配置失败: ' + (e as Error).message)
+      showToast('获取配置失败: ' + (e as Error).message)
     } finally {
       setLoadingSettings(false)
     }
@@ -189,20 +246,16 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
   // 开启添加供应商
   const handleAddNewProvider = () => {
     setProviderForm({
-      id: `custom-${Date.now().toString().slice(-4)}`,
+      id: `provider-${Date.now().toString().slice(-4)}`,
       name: '',
       baseUrl: '',
       apiKey: '',
       protocol: 'openai-completions',
       headers: '',
-      models: {
-        text: 'deepseek-v4-flash',
-        image: 'deepseek-v4-flash-vision-exp',
-        audio: 'mimo-v2.5',
-        merge: 'deepseek-v4-flash',
-      },
+      models: ['deepseek-v4-flash'],
       active: providers.length === 0,
     })
+    setNewModelInput('')
     setEditingProviderId('new')
     setTestState({ status: 'idle', message: '' })
   }
@@ -210,6 +263,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
   // 开启编辑供应商
   const handleEditProvider = (p: ModelProvider) => {
     setProviderForm(JSON.parse(JSON.stringify(p)))
+    setNewModelInput('')
     setEditingProviderId(p.id)
     setTestState({ status: 'idle', message: '' })
   }
@@ -225,7 +279,6 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     if (editingProviderId === id) {
       setEditingProviderId(null)
     }
-    // 同步保存
     persistProvidersAndSave(updated, adminPassword)
   }
 
@@ -237,7 +290,30 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     }))
     setProviders(updated)
     persistProvidersAndSave(updated, adminPassword)
-    showToast('已切换当前使用的模型供应商')
+    showToast('已切换生效提供商')
+  }
+
+  // 为当前编辑的供应商添加模型
+  const handleAddModelTag = () => {
+    const trimmed = newModelInput.trim()
+    if (!trimmed) return
+    if (providerForm.models.includes(trimmed)) {
+      showToast('该模型已存在')
+      return
+    }
+    setProviderForm(prev => ({
+      ...prev,
+      models: [...prev.models, trimmed],
+    }))
+    setNewModelInput('')
+  }
+
+  // 从当前编辑的供应商中移除模型
+  const handleRemoveModelTag = (m: string) => {
+    setProviderForm(prev => ({
+      ...prev,
+      models: prev.models.filter(item => item !== m),
+    }))
   }
 
   // 保存当前编辑的供应商
@@ -254,7 +330,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
 
     let updated: ModelProvider[] = []
     if (editingProviderId === 'new') {
-      const newP = { ...providerForm, id: providerForm.id.trim() || `custom-${Date.now().toString().slice(-4)}` }
+      const newP = { ...providerForm, id: providerForm.id.trim() || `provider-${Date.now().toString().slice(-4)}` }
       if (providers.length === 0) newP.active = true
       updated = [...providers, newP]
     } else {
@@ -267,51 +343,135 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     showToast('模型供应商已保存！')
   }
 
-  // 将供应商映射回系统底层设置并持久化保存
+  // 将供应商列表持久化保存到后端
   const persistProvidersAndSave = async (provList: ModelProvider[], newAdminPw: string) => {
     const activeProv = provList.find(p => p.active) || provList[0]
-    if (!activeProv) return
-
     setSaving(true)
     try {
       const payload: any = {
         ...rawSettings,
         ADMIN_PASSWORD: newAdminPw,
         MODEL_PROVIDERS: JSON.stringify(provList),
+      }
 
-        // 将当前激活的供应商映射到系统各模块
-        TEXT_PROVIDER_NAME: activeProv.name || activeProv.id,
-        TEXT_API_KEY: activeProv.apiKey,
-        TEXT_BASE_URL: activeProv.baseUrl,
-        TEXT_MODEL: activeProv.models.text || 'deepseek-v4-flash',
-        TEXT_HEADERS: activeProv.headers || '',
-
-        IMAGE_PROVIDER_NAME: activeProv.name || activeProv.id,
-        IMAGE_API_KEY: activeProv.apiKey,
-        IMAGE_BASE_URL: activeProv.baseUrl,
-        IMAGE_MODEL: activeProv.models.image || 'deepseek-v4-flash-vision-exp',
-        IMAGE_HEADERS: activeProv.headers || '',
-
-        AUDIO_PROVIDER_NAME: activeProv.name || activeProv.id,
-        AUDIO_API_KEY: activeProv.apiKey,
-        AUDIO_BASE_URL: activeProv.baseUrl,
-        AUDIO_MODEL: activeProv.models.audio || 'mimo-v2.5',
-        AUDIO_HEADERS: activeProv.headers || '',
-
-        MERGE_PROVIDER_NAME: activeProv.name || activeProv.id,
-        MERGE_API_KEY: activeProv.apiKey,
-        MERGE_BASE_URL: activeProv.baseUrl,
-        MERGE_MODEL: activeProv.models.merge || 'deepseek-v4-flash',
-        MERGE_HEADERS: activeProv.headers || '',
+      if (activeProv) {
+        if (!payload.TEXT_PROVIDER_NAME || payload.TEXT_PROVIDER_NAME === activeProv.name) {
+          payload.TEXT_PROVIDER_NAME = activeProv.name || activeProv.id
+          payload.TEXT_BASE_URL = activeProv.baseUrl
+          if (activeProv.apiKey && activeProv.apiKey !== '••••••••') payload.TEXT_API_KEY = activeProv.apiKey
+          payload.TEXT_HEADERS = activeProv.headers || ''
+        }
+        if (!payload.IMAGE_PROVIDER_NAME || payload.IMAGE_PROVIDER_NAME === activeProv.name) {
+          payload.IMAGE_PROVIDER_NAME = activeProv.name || activeProv.id
+          payload.IMAGE_BASE_URL = activeProv.baseUrl
+          if (activeProv.apiKey && activeProv.apiKey !== '••••••••') payload.IMAGE_API_KEY = activeProv.apiKey
+          payload.IMAGE_HEADERS = activeProv.headers || ''
+        }
+        if (!payload.AUDIO_PROVIDER_NAME || payload.AUDIO_PROVIDER_NAME === activeProv.name) {
+          payload.AUDIO_PROVIDER_NAME = activeProv.name || activeProv.id
+          payload.AUDIO_BASE_URL = activeProv.baseUrl
+          if (activeProv.apiKey && activeProv.apiKey !== '••••••••') payload.AUDIO_API_KEY = activeProv.apiKey
+          payload.AUDIO_HEADERS = activeProv.headers || ''
+        }
+        if (!payload.MERGE_PROVIDER_NAME || payload.MERGE_PROVIDER_NAME === activeProv.name) {
+          payload.MERGE_PROVIDER_NAME = activeProv.name || activeProv.id
+          payload.MERGE_BASE_URL = activeProv.baseUrl
+          if (activeProv.apiKey && activeProv.apiKey !== '••••••••') payload.MERGE_API_KEY = activeProv.apiKey
+          payload.MERGE_HEADERS = activeProv.headers || ''
+        }
       }
 
       await api.saveSettings(payload)
       setRawSettings(payload)
       loadHealth()
     } catch (e: any) {
-      showToast('保存设置失败: ' + e.message)
+      showToast('保存供应商失败: ' + e.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  // 保存模型分组配置
+  const handleSaveModelGroups = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    if (providers.length === 0) {
+      showToast('请先在 API 接口参数中添加模型供应商')
+      return
+    }
+
+    const getProv = (id: string) => providers.find(p => p.id === id) || providers[0]
+
+    const textP = getProv(modelGroups.text?.providerId)
+    const imgP = getProv(modelGroups.image?.providerId)
+    const audioP = getProv(modelGroups.audio?.providerId)
+    const mergeP = getProv(modelGroups.merge?.providerId)
+
+    if (!textP || !imgP || !audioP || !mergeP) {
+      showToast('请先为所有功能指定供应商')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const payload: any = {
+        ...rawSettings,
+        MODEL_PROVIDERS: JSON.stringify(providers),
+        MODEL_GROUPS: JSON.stringify(modelGroups),
+
+        TEXT_PROVIDER_NAME: textP.name || textP.id,
+        TEXT_BASE_URL: textP.baseUrl,
+        TEXT_MODEL: modelGroups.text.model || textP.models[0] || 'deepseek-v4-flash',
+        TEXT_HEADERS: textP.headers || '',
+
+        IMAGE_PROVIDER_NAME: imgP.name || imgP.id,
+        IMAGE_BASE_URL: imgP.baseUrl,
+        IMAGE_MODEL: modelGroups.image.model || imgP.models[0] || 'deepseek-v4-flash-vision-exp',
+        IMAGE_HEADERS: imgP.headers || '',
+
+        AUDIO_PROVIDER_NAME: audioP.name || audioP.id,
+        AUDIO_BASE_URL: audioP.baseUrl,
+        AUDIO_MODEL: modelGroups.audio.model || audioP.models[0] || 'mimo-v2.5',
+        AUDIO_HEADERS: audioP.headers || '',
+
+        MERGE_PROVIDER_NAME: mergeP.name || mergeP.id,
+        MERGE_BASE_URL: mergeP.baseUrl,
+        MERGE_MODEL: modelGroups.merge.model || mergeP.models[0] || 'deepseek-v4-flash',
+        MERGE_HEADERS: mergeP.headers || '',
+      }
+
+      if (textP.apiKey && textP.apiKey !== '••••••••') payload.TEXT_API_KEY = textP.apiKey
+      if (imgP.apiKey && imgP.apiKey !== '••••••••') payload.IMAGE_API_KEY = imgP.apiKey
+      if (audioP.apiKey && audioP.apiKey !== '••••••••') payload.AUDIO_API_KEY = audioP.apiKey
+      if (mergeP.apiKey && mergeP.apiKey !== '••••••••') payload.MERGE_API_KEY = mergeP.apiKey
+
+      await api.saveSettings(payload)
+      setRawSettings(payload)
+      setShowGroupsModal(false)
+      showToast('模型分组配置已成功保存！')
+      loadHealth()
+    } catch (e: any) {
+      showToast('保存模型分组失败: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 保存管理员密码
+  const handleSaveAdminPassword = async () => {
+    if (!adminPassword.trim()) {
+      showToast('密码不能为空')
+      return
+    }
+    try {
+      const payload = {
+        ...rawSettings,
+        ADMIN_PASSWORD: adminPassword.trim(),
+      }
+      await api.saveSettings(payload)
+      setRawSettings(payload)
+      showToast('管理员密码已更新')
+    } catch (e: any) {
+      showToast('更新密码失败: ' + e.message)
     }
   }
 
@@ -323,6 +483,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
       return
     }
 
+    const testModel = providerForm.models[0] || 'deepseek-v4-flash'
     setTestState({ status: 'testing', message: '测试连接中…' })
     try {
       const res = await api.testSettings({
@@ -330,7 +491,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
         provider: providerForm.name || providerForm.id,
         api_key: apiKey,
         base_url: providerForm.baseUrl,
-        model: providerForm.models.text || 'deepseek-v4-flash',
+        model: testModel,
         headers: providerForm.headers,
       })
       if (res.ok) {
@@ -348,7 +509,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     const current = health?.auto_merge_existing_confidence || 'medium'
     const nextIdx = (order.indexOf(current as any) + 1) % order.length
     const nextVal = order[nextIdx]
-    setHealth(prev => prev ? { ...prev, auto_merge_existing_confidence: nextVal } : null)
+    setHealth(prev => (prev ? { ...prev, auto_merge_existing_confidence: nextVal } : null))
     try {
       const data = await api.getSettings()
       data.AUTO_MERGE_EXISTING_CONFIDENCE = nextVal
@@ -366,7 +527,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     const current = health?.auto_merge_new_confidence || 'high'
     const nextIdx = (order.indexOf(current as any) + 1) % order.length
     const nextVal = order[nextIdx]
-    setHealth(prev => prev ? { ...prev, auto_merge_new_confidence: nextVal } : null)
+    setHealth(prev => (prev ? { ...prev, auto_merge_new_confidence: nextVal } : null))
     try {
       const data = await api.getSettings()
       data.AUTO_MERGE_NEW_CONFIDENCE = nextVal
@@ -379,22 +540,44 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     }
   }
 
+  // 判断 API 接口参数是否已配置
+  const isApiConfigured = Boolean(
+    health?.api_key_set ||
+      (providers.length > 0 && providers.some(p => Boolean(p.baseUrl && p.apiKey && p.apiKey !== '••••••••'))) ||
+      rawSettings.TEXT_API_KEY ||
+      rawSettings.AUDIO_API_KEY
+  )
+
+  // 判断模型分组是否已完整配置
+  const isGroupsConfigured = Boolean(
+    providers.length > 0 &&
+      modelGroups.text?.providerId &&
+      modelGroups.text?.model &&
+      modelGroups.image?.providerId &&
+      modelGroups.image?.model &&
+      modelGroups.audio?.providerId &&
+      modelGroups.audio?.model &&
+      modelGroups.merge?.providerId &&
+      modelGroups.merge?.model
+  )
+
   return (
     <div className="fade-in">
       <div className="section-title">设置</div>
 
       {health && (
         <div className="card" style={{ padding: '8px 16px' }}>
-          <div className="kv">
+          {/* 1. API 接口参数 */}
+          <div className="kv" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="k">API 接口参数</span>
             <button
-              onClick={openConfigModal}
+              type="button"
+              onClick={() => setShowApiModal(true)}
               disabled={loadingSettings}
-              className="btn small"
               style={{
-                background: health.api_key_set ? '#10b981' : '#ef4444',
-                color: '#fff',
-                borderColor: health.api_key_set ? '#10b981' : '#ef4444',
+                background: isApiConfigured ? '#10b981' : '#ef4444',
+                border: `1px solid ${isApiConfigured ? '#059669' : '#dc2626'}`,
+                color: '#ffffff',
                 padding: '4px 10px',
                 fontSize: '11px',
                 borderRadius: '6px',
@@ -402,15 +585,45 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                transition: 'opacity 0.15s',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+                transition: 'opacity 0.15s ease',
               }}
               onMouseOver={e => (e.currentTarget.style.opacity = '0.88')}
               onMouseOut={e => (e.currentTarget.style.opacity = '1')}
             >
-              {loadingSettings ? '读取中…' : health.api_key_set ? '已配置 ✓' : '未配置 ✗'}
+              {loadingSettings ? '读取中…' : isApiConfigured ? '已配置 ✓' : '未配置 ✗'}
             </button>
           </div>
+
+          {/* 2. 模型分组 */}
+          <div className="kv" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="k">模型分组</span>
+            <button
+              type="button"
+              onClick={() => setShowGroupsModal(true)}
+              disabled={loadingSettings}
+              style={{
+                background: isGroupsConfigured ? '#10b981' : '#ef4444',
+                border: `1px solid ${isGroupsConfigured ? '#059669' : '#dc2626'}`,
+                color: '#ffffff',
+                padding: '4px 10px',
+                fontSize: '11px',
+                borderRadius: '6px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+                transition: 'opacity 0.15s ease',
+              }}
+              onMouseOver={e => (e.currentTarget.style.opacity = '0.88')}
+              onMouseOut={e => (e.currentTarget.style.opacity = '1')}
+            >
+              {loadingSettings ? '读取中…' : isGroupsConfigured ? '已配置 ✓' : '未配置 ✗'}
+            </button>
+          </div>
+
+          {/* 3. 语音转写 */}
           <div className="kv">
             <span className="k">语音转写 (Whisper)</span>
             {health.cloud_whisper ? (
@@ -421,38 +634,31 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
               <span className="v warn">未配置/未安装</span>
             )}
           </div>
+
+          {/* 4. 归类至已有主题门槛 */}
           <div className="kv" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="k">归类至已有主题门槛</span>
             <button
+              type="button"
               onClick={cycleExistingConfidence}
-              className="btn small ghost"
-              style={{
-                padding: '4px 10px',
-                fontSize: '11px',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-              }}
+              style={roundedBorderButtonStyle}
             >
               {{ low: '全自动', medium: '中置信及以上', high: '高置信才自动', never: '从不自动' }[health.auto_merge_existing_confidence] || health.auto_merge_existing_confidence}
             </button>
           </div>
+
+          {/* 5. 归类为全新主题门槛 */}
           <div className="kv" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="k">归类为全新主题门槛</span>
             <button
+              type="button"
               onClick={cycleNewConfidence}
-              className="btn small ghost"
-              style={{
-                padding: '4px 10px',
-                fontSize: '11px',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-              }}
+              style={roundedBorderButtonStyle}
             >
               {{ low: '全自动', medium: '中置信及以上', high: '高置信才自动', never: '从不自动' }[health.auto_merge_new_confidence] || health.auto_merge_new_confidence}
             </button>
           </div>
+
           <div className="kv" style={{ borderBottom: 'none' }}>
             <span className="k">处理队列</span>
             <span className="v">{health.queue_depth} 条</span>
@@ -460,10 +666,31 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
         </div>
       )}
 
-      <div style={{ padding: '4px 0 12px' }}>
+      {/* 退出登录 */}
+      <div style={{ padding: '8px 0 16px' }}>
         <button
-          className="btn danger"
-          style={{ width: '100%', padding: '10px', borderRadius: '8px' }}
+          type="button"
+          style={{
+            width: '100%',
+            padding: '10px',
+            border: '1px solid #fca5a5',
+            borderRadius: '8px',
+            background: '#ffffff',
+            color: '#ef4444',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseOver={e => {
+            e.currentTarget.style.background = '#fef2f2'
+            e.currentTarget.style.borderColor = '#f87171'
+          }}
+          onMouseOut={e => {
+            e.currentTarget.style.background = '#ffffff'
+            e.currentTarget.style.borderColor = '#fca5a5'
+          }}
           onClick={async () => {
             if (!confirm('确定要退出登录吗？')) return
             try {
@@ -478,62 +705,32 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
         </button>
       </div>
 
-      <div className="empty" style={{ padding: '36px 20px', fontSize: 12 }}>
+      <div className="empty" style={{ padding: '24px 20px', fontSize: 12 }}>
         乱写 · 随手碎念与拍照，自动归档并提取白板文字<br />
         系统将在后台自动合并、重构、维护关联双链
       </div>
 
-      {/* DeepSeek Harness 风格模型设置弹窗 */}
-      {showModal && (
-        <div
-          className="modal-overlay"
-          style={{
-            position: 'fixed',
-            top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(15, 23, 42, 0.45)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 100,
-            padding: '20px',
-          }}
-        >
-          <div
-            className="modal-content"
-            style={{
-              background: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '16px',
-              width: '100%',
-              maxWidth: '560px',
-              maxHeight: '88vh',
-              overflowY: 'auto',
-              padding: '24px',
-              boxShadow: '0 20px 45px rgba(0, 0, 0, 0.12)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px',
-            }}
-          >
+      {/* ========================================================================= */}
+      {/* 弹窗 1：API 接口参数管理 */}
+      {/* ========================================================================= */}
+      {showApiModal && (
+        <div className="modal-overlay" style={overlayStyle}>
+          <div className="modal-content" style={modalBoxStyle}>
             {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px' }}>
+            <div style={modalHeaderStyle}>
               <div>
-                <h3 style={{ fontSize: '19px', fontWeight: 700, color: '#0f172a', margin: 0 }}>模型</h3>
-                <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>
-                  填入各提供方的 API 密钥即可使用其模型。
+                <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', margin: 0 }}>API 接口参数</h3>
+                <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0 0' }}>
+                  填入各提供方的 API 密钥与地址，统一在此集中管理。
                 </p>
               </div>
               <button
-                onClick={() => setShowModal(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '22px',
-                  cursor: 'pointer',
-                  color: '#94a3b8',
-                  padding: '2px 6px',
+                type="button"
+                onClick={() => {
+                  setShowApiModal(false)
+                  setEditingProviderId(null)
                 }}
+                style={closeButtonStyle}
               >
                 ×
               </button>
@@ -549,25 +746,32 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                <span style={{ fontWeight: 600, fontSize: '13px', color: '#1e293b' }}>管理员密码</span>
-                <span style={{ fontSize: '11px', color: '#94a3b8' }}>留空或保持 ••• 即不修改</span>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>管理员密码</span>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>保护接口配置与核心设置</span>
               </div>
-              <input
-                type="password"
-                placeholder="留空(或保持 •••)=不修改"
-                value={adminPassword}
-                onChange={e => {
-                  setAdminPassword(e.target.value)
-                  persistProvidersAndSave(providers, e.target.value)
-                }}
-                style={modernInputStyle}
-              />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="password"
+                  placeholder="留空保持不变 (至少 6 位)"
+                  value={adminPassword}
+                  onChange={e => setAdminPassword(e.target.value)}
+                  style={modernInputStyle}
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveAdminPassword}
+                  style={roundedBorderButtonStyle}
+                >
+                  保存
+                </button>
+              </div>
             </div>
 
-            {/* 模型列表 (模型A、模型B...) */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* 模型供应商列表 (模型A、模型B...) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>已配置供应商</div>
               {providers.map(p => {
-                const isKeySet = p.apiKey && p.apiKey !== '••••••••' ? true : (p.active && rawSettings.AUDIO_API_KEY ? true : false)
+                const isKeySet = Boolean(p.apiKey && p.apiKey !== '')
                 return (
                   <div
                     key={p.id}
@@ -575,10 +779,10 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      border: p.active ? '1.5px solid #cbd5e1' : '1px solid #e2e8f0',
+                      border: p.active ? '1.5px solid #93c5fd' : '1px solid #e2e8f0',
                       borderRadius: '10px',
-                      padding: '12px 16px',
-                      background: '#ffffff',
+                      padding: '10px 14px',
+                      background: p.active ? '#f8fafc' : '#ffffff',
                       boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)',
                     }}
                   >
@@ -587,7 +791,6 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                       <span style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>
                         {p.name || p.id}
                       </span>
-                      {/* 状态小圆点: 绿色代表已配置密钥/已启用，红色代表未配置 */}
                       <span
                         style={{
                           display: 'inline-block',
@@ -596,46 +799,69 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                           borderRadius: '50%',
                           background: isKeySet ? '#10b981' : '#ef4444',
                         }}
+                        title={isKeySet ? '已填密钥' : '未填密钥'}
                       />
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          color: '#64748b',
+                          background: '#f1f5f9',
+                          border: '1px solid #e2e8f0',
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                        }}
+                      >
+                        {p.models.length} 个模型
+                      </span>
                       {p.active && (
                         <span
                           style={{
                             fontSize: '11px',
                             color: '#2563eb',
                             background: '#eff6ff',
+                            border: '1px solid #bfdbfe',
                             padding: '1px 6px',
                             borderRadius: '4px',
                             fontWeight: 500,
                           }}
                         >
-                          当前生效
+                          默认
                         </span>
                       )}
                     </div>
 
-                    {/* 右侧：按钮组 (编辑、删除) */}
+                    {/* 右侧：按钮组 (使用、编辑、删除) */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       {!p.active && (
                         <button
                           type="button"
                           onClick={() => handleActivateProvider(p.id)}
-                          style={harnessSubtleButtonStyle}
-                          title="设为当前生效提供商"
+                          style={{
+                            ...roundedBorderButtonStyle,
+                            background: '#eff6ff',
+                            borderColor: '#bfdbfe',
+                            color: '#2563eb',
+                          }}
+                          title="设为默认供应商"
                         >
-                          使用
+                          设为默认
                         </button>
                       )}
                       <button
                         type="button"
                         onClick={() => handleEditProvider(p)}
-                        style={harnessSubtleButtonStyle}
+                        style={roundedBorderButtonStyle}
                       >
                         编辑
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDeleteProvider(p.id)}
-                        style={harnessDangerButtonStyle}
+                        style={{
+                          ...roundedBorderButtonStyle,
+                          borderColor: '#fca5a5',
+                          color: '#ef4444',
+                        }}
                       >
                         删除
                       </button>
@@ -646,24 +872,15 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
             </div>
 
             {/* 模型A、B下面一行是靠右的按钮：增加模型供应商 */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-2px' }}>
               <button
                 type="button"
                 onClick={handleAddNewProvider}
                 style={{
-                  background: '#ffffff',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '8px',
+                  ...roundedBorderButtonStyle,
                   padding: '6px 14px',
-                  fontSize: '12px',
                   fontWeight: 500,
-                  color: '#1e293b',
-                  cursor: 'pointer',
-                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
-                  transition: 'all 0.15s ease',
                 }}
-                onMouseOver={e => (e.currentTarget.style.background = '#f8fafc')}
-                onMouseOut={e => (e.currentTarget.style.background = '#ffffff')}
               >
                 + 增加模型供应商
               </button>
@@ -673,24 +890,24 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
             {editingProviderId !== null && (
               <div
                 style={{
-                  border: '1px solid #e2e8f0',
+                  border: '1px solid #cbd5e1',
                   borderRadius: '12px',
-                  padding: '18px',
+                  padding: '16px',
                   background: '#f8fafc',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '14px',
-                  animation: 'fadeIn 0.2s ease',
+                  gap: '12px',
+                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.02)',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
                   <h4 style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a', margin: 0 }}>
-                    {editingProviderId === 'new' ? '自定义提供方' : `编辑提供方 · ${providerForm.name || providerForm.id}`}
+                    {editingProviderId === 'new' ? '增加模型供应商' : `编辑提供方 · ${providerForm.name || providerForm.id}`}
                   </h4>
                   <button
                     type="button"
                     onClick={() => setEditingProviderId(null)}
-                    style={{ background: 'none', border: 'none', fontSize: '18px', color: '#94a3b8', cursor: 'pointer' }}
+                    style={closeButtonStyle}
                   >
                     ×
                   </button>
@@ -702,14 +919,12 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                     <label style={formLabelStyle}>Provider ID</label>
                     <input
                       type="text"
-                      placeholder="acme-gateway"
+                      placeholder="如 opencode-go / custom-01"
                       value={providerForm.id}
                       onChange={e => setProviderForm(prev => ({ ...prev, id: e.target.value }))}
                       style={modernInputStyle}
                     />
-                    <p style={formHelpTextStyle}>
-                      以小写字母开头的标识，在请求中唯一标识该提供方，并用于派生凭据名。
-                    </p>
+                    <p style={formHelpTextStyle}>小写字母与短横杠组成的唯一标识。</p>
                   </div>
 
                   {/* 显示名称 */}
@@ -729,7 +944,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                     <label style={formLabelStyle}>API 地址 (Base URL)</label>
                     <input
                       type="text"
-                      placeholder="https://gateway.example/v1"
+                      placeholder="https://opencode.ai/zen/go/v1"
                       value={providerForm.baseUrl}
                       onChange={e => setProviderForm(prev => ({ ...prev, baseUrl: e.target.value }))}
                       style={modernInputStyle}
@@ -761,11 +976,11 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                     />
                   </div>
 
-                  {/* 自定义请求头 (每家不一样的选项以文本框体现) */}
+                  {/* 自定义请求头 */}
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <label style={formLabelStyle}>自定义请求头 (Headers)</label>
-                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>支持每行 Key: Value 或 JSON 格式</span>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>支持多行 Key: Value 格式</span>
                     </div>
                     <textarea
                       rows={3}
@@ -781,65 +996,96 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                       }}
                     />
                     <p style={formHelpTextStyle}>
-                      用于满足每家服务商特殊的请求头认证或路由机制（如 OpenCode Go 需提供 x-opencode-session）。
+                      用于特定服务商的认证或路由要求（如 OpenCode Go 需指定 x-opencode-session）。
                     </p>
                   </div>
 
-                  {/* 各功能模型目录配置 */}
+                  {/* 可用模型列表管理 (支持手动添加并保存) */}
                   <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '10px' }}>
-                    <label style={{ ...formLabelStyle, marginBottom: '8px' }}>模型目录分配 (可直接指定任务模型)</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                      <div>
-                        <span style={{ fontSize: '11px', color: '#64748b' }}>文字分类 (Text)</span>
-                        <input
-                          type="text"
-                          placeholder="deepseek-v4-flash"
-                          value={providerForm.models.text}
-                          onChange={e => setProviderForm(prev => ({ ...prev, models: { ...prev.models, text: e.target.value } }))}
-                          style={modernInputStyle}
-                        />
-                      </div>
-                      <div>
-                        <span style={{ fontSize: '11px', color: '#64748b' }}>图像识别 (Image)</span>
-                        <input
-                          type="text"
-                          placeholder="deepseek-v4-flash-vision-exp"
-                          value={providerForm.models.image}
-                          onChange={e => setProviderForm(prev => ({ ...prev, models: { ...prev.models, image: e.target.value } }))}
-                          style={modernInputStyle}
-                        />
-                      </div>
-                      <div>
-                        <span style={{ fontSize: '11px', color: '#64748b' }}>语音转写 (Audio)</span>
-                        <input
-                          type="text"
-                          placeholder="mimo-v2.5"
-                          value={providerForm.models.audio}
-                          onChange={e => setProviderForm(prev => ({ ...prev, models: { ...prev.models, audio: e.target.value } }))}
-                          style={modernInputStyle}
-                        />
-                      </div>
-                      <div>
-                        <span style={{ fontSize: '11px', color: '#64748b' }}>笔记合并 (Merge)</span>
-                        <input
-                          type="text"
-                          placeholder="deepseek-v4-flash"
-                          value={providerForm.models.merge}
-                          onChange={e => setProviderForm(prev => ({ ...prev, models: { ...prev.models, merge: e.target.value } }))}
-                          style={modernInputStyle}
-                        />
-                      </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={formLabelStyle}>可用模型列表</label>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>添加后可在“模型分组”中指定选用</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <input
+                        type="text"
+                        placeholder="输入模型名，如 deepseek-v4-flash"
+                        value={newModelInput}
+                        onChange={e => setNewModelInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            handleAddModelTag()
+                          }
+                        }}
+                        style={modernInputStyle}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddModelTag}
+                        style={{
+                          ...roundedBorderButtonStyle,
+                          padding: '6px 14px',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        + 添加模型
+                      </button>
+                    </div>
+
+                    {/* 已添加模型列表标签 */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+                      {providerForm.models.length === 0 && (
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                          暂无模型，请在上方输入模型名后点击“添加模型”。
+                        </span>
+                      )}
+                      {providerForm.models.map(m => (
+                        <span
+                          key={m}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            background: '#ffffff',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: '16px',
+                            padding: '3px 10px',
+                            fontSize: '12px',
+                            color: '#1e293b',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                          }}
+                        >
+                          <span>{m}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveModelTag(m)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#94a3b8',
+                              cursor: 'pointer',
+                              padding: '0 2px',
+                              fontSize: '14px',
+                              lineHeight: 1,
+                            }}
+                            title="删除该模型"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
                     </div>
                   </div>
 
                   {/* 展开面板底栏动作 */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', borderTop: '1px solid #e2e8f0', paddingTop: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <button
                         type="button"
                         onClick={handleTestProvider}
                         disabled={testState.status === 'testing'}
-                        style={harnessSubtleButtonStyle}
+                        style={roundedBorderButtonStyle}
                       >
                         {testState.status === 'testing' ? '测试中…' : '测试连接'}
                       </button>
@@ -860,7 +1106,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                       <button
                         type="button"
                         onClick={() => setEditingProviderId(null)}
-                        style={harnessSubtleButtonStyle}
+                        style={roundedBorderButtonStyle}
                       >
                         收起
                       </button>
@@ -870,7 +1116,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                         style={{
                           background: '#2563eb',
                           color: '#fff',
-                          border: 'none',
+                          border: '1px solid #1d4ed8',
                           borderRadius: '6px',
                           padding: '5px 14px',
                           fontSize: '12px',
@@ -888,8 +1134,347 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* 弹窗 2：模型分组管理 (按功能分配指定的模型供应商与模型) */}
+      {/* ========================================================================= */}
+      {showGroupsModal && (
+        <div className="modal-overlay" style={overlayStyle}>
+          <div className="modal-content" style={modalBoxStyle}>
+            {/* Modal Header */}
+            <div style={modalHeaderStyle}>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', margin: 0 }}>模型分组</h3>
+                <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0 0' }}>
+                  为各项功能分配指定的模型供应商与模型。只能选用供应商已添加的模型。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGroupsModal(false)}
+                style={closeButtonStyle}
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveModelGroups} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {providers.length === 0 && (
+                <div style={{ padding: '12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#b91c1c', fontSize: '13px' }}>
+                  当前尚未配置任何模型供应商，请先在“API 接口参数”中添加供应商及模型。
+                </div>
+              )}
+
+              {/* 1. 文字模型 */}
+              <div style={groupCardStyle}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>文字模型 (Text)</div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>用于便签文本归档、分类整理与主题标题生成</div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div>
+                    <label style={formLabelStyle}>选择模型供应商</label>
+                    <select
+                      value={modelGroups.text?.providerId || (providers[0]?.id || '')}
+                      onChange={e => {
+                        const newProvId = e.target.value
+                        const p = providers.find(item => item.id === newProvId)
+                        const nextModel = p && p.models.length > 0 ? p.models[0] : ''
+                        setModelGroups(prev => ({
+                          ...prev,
+                          text: { providerId: newProvId, model: nextModel },
+                        }))
+                      }}
+                      style={modernInputStyle}
+                    >
+                      {providers.map(p => (
+                        <option key={p.id} value={p.id}>{p.name || p.id}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={formLabelStyle}>选用模型</label>
+                    {(() => {
+                      const curProv = providers.find(p => p.id === (modelGroups.text?.providerId || providers[0]?.id))
+                      const availableModels = curProv?.models || []
+                      return (
+                        <select
+                          value={modelGroups.text?.model || ''}
+                          onChange={e => {
+                            const val = e.target.value
+                            setModelGroups(prev => ({
+                              ...prev,
+                              text: { ...prev.text, model: val },
+                            }))
+                          }}
+                          style={modernInputStyle}
+                        >
+                          {availableModels.length === 0 && (
+                            <option value="">(该供应商未添加模型)</option>
+                          )}
+                          {availableModels.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      )
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. 图像模型 */}
+              <div style={groupCardStyle}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>图像模型 (Image)</div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>用于白板拍照、图片文字提取与视觉内容理解</div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div>
+                    <label style={formLabelStyle}>选择模型供应商</label>
+                    <select
+                      value={modelGroups.image?.providerId || (providers[0]?.id || '')}
+                      onChange={e => {
+                        const newProvId = e.target.value
+                        const p = providers.find(item => item.id === newProvId)
+                        const nextModel = p && p.models.length > 0 ? p.models[0] : ''
+                        setModelGroups(prev => ({
+                          ...prev,
+                          image: { providerId: newProvId, model: nextModel },
+                        }))
+                      }}
+                      style={modernInputStyle}
+                    >
+                      {providers.map(p => (
+                        <option key={p.id} value={p.id}>{p.name || p.id}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={formLabelStyle}>选用模型</label>
+                    {(() => {
+                      const curProv = providers.find(p => p.id === (modelGroups.image?.providerId || providers[0]?.id))
+                      const availableModels = curProv?.models || []
+                      return (
+                        <select
+                          value={modelGroups.image?.model || ''}
+                          onChange={e => {
+                            const val = e.target.value
+                            setModelGroups(prev => ({
+                              ...prev,
+                              image: { ...prev.image, model: val },
+                            }))
+                          }}
+                          style={modernInputStyle}
+                        >
+                          {availableModels.length === 0 && (
+                            <option value="">(该供应商未添加模型)</option>
+                          )}
+                          {availableModels.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      )
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. 语音模型 */}
+              <div style={groupCardStyle}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>语音模型 (Audio)</div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>用于随手录音、音频转写为文本内容</div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div>
+                    <label style={formLabelStyle}>选择模型供应商</label>
+                    <select
+                      value={modelGroups.audio?.providerId || (providers[0]?.id || '')}
+                      onChange={e => {
+                        const newProvId = e.target.value
+                        const p = providers.find(item => item.id === newProvId)
+                        const nextModel = p && p.models.length > 0 ? p.models[0] : ''
+                        setModelGroups(prev => ({
+                          ...prev,
+                          audio: { providerId: newProvId, model: nextModel },
+                        }))
+                      }}
+                      style={modernInputStyle}
+                    >
+                      {providers.map(p => (
+                        <option key={p.id} value={p.id}>{p.name || p.id}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={formLabelStyle}>选用模型</label>
+                    {(() => {
+                      const curProv = providers.find(p => p.id === (modelGroups.audio?.providerId || providers[0]?.id))
+                      const availableModels = curProv?.models || []
+                      return (
+                        <select
+                          value={modelGroups.audio?.model || ''}
+                          onChange={e => {
+                            const val = e.target.value
+                            setModelGroups(prev => ({
+                              ...prev,
+                              audio: { ...prev.audio, model: val },
+                            }))
+                          }}
+                          style={modernInputStyle}
+                        >
+                          {availableModels.length === 0 && (
+                            <option value="">(该供应商未添加模型)</option>
+                          )}
+                          {availableModels.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      )
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. 合并模型 */}
+              <div style={groupCardStyle}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>合并模型 (Merge)</div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>用于便签与主题深度重构、自动维护双链</div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div>
+                    <label style={formLabelStyle}>选择模型供应商</label>
+                    <select
+                      value={modelGroups.merge?.providerId || (providers[0]?.id || '')}
+                      onChange={e => {
+                        const newProvId = e.target.value
+                        const p = providers.find(item => item.id === newProvId)
+                        const nextModel = p && p.models.length > 0 ? p.models[0] : ''
+                        setModelGroups(prev => ({
+                          ...prev,
+                          merge: { providerId: newProvId, model: nextModel },
+                        }))
+                      }}
+                      style={modernInputStyle}
+                    >
+                      {providers.map(p => (
+                        <option key={p.id} value={p.id}>{p.name || p.id}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={formLabelStyle}>选用模型</label>
+                    {(() => {
+                      const curProv = providers.find(p => p.id === (modelGroups.merge?.providerId || providers[0]?.id))
+                      const availableModels = curProv?.models || []
+                      return (
+                        <select
+                          value={modelGroups.merge?.model || ''}
+                          onChange={e => {
+                            const val = e.target.value
+                            setModelGroups(prev => ({
+                              ...prev,
+                              merge: { ...prev.merge, model: val },
+                            }))
+                          }}
+                          style={modernInputStyle}
+                        >
+                          {availableModels.length === 0 && (
+                            <option value="">(该供应商未添加模型)</option>
+                          )}
+                          {availableModels.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      )
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* 弹窗底栏保存按钮 */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowGroupsModal(false)}
+                  style={roundedBorderButtonStyle}
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving || providers.length === 0}
+                  style={{
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    border: '1px solid #1d4ed8',
+                    borderRadius: '6px',
+                    padding: '6px 16px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                  }}
+                >
+                  {saving ? '保存中…' : '保存分组配置'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
+}
+
+const overlayStyle: React.CSSProperties = {
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  background: 'rgba(15, 23, 42, 0.45)',
+  backdropFilter: 'blur(8px)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 100,
+  padding: '20px',
+}
+
+const modalBoxStyle: React.CSSProperties = {
+  background: '#ffffff',
+  border: '1px solid #e2e8f0',
+  borderRadius: '16px',
+  width: '100%',
+  maxWidth: '580px',
+  maxHeight: '88vh',
+  overflowY: 'auto',
+  padding: '22px',
+  boxShadow: '0 20px 45px rgba(0, 0, 0, 0.12)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '16px',
+}
+
+const modalHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'flex-start',
+  borderBottom: '1px solid #f1f5f9',
+  paddingBottom: '12px',
+}
+
+const groupCardStyle: React.CSSProperties = {
+  border: '1px solid #e2e8f0',
+  borderRadius: '10px',
+  padding: '14px',
+  background: '#f8fafc',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '10px',
+  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)',
 }
 
 const formLabelStyle: React.CSSProperties = {
@@ -910,8 +1495,8 @@ const formHelpTextStyle: React.CSSProperties = {
 const modernInputStyle: React.CSSProperties = {
   width: '100%',
   fontSize: '13px',
-  padding: '8px 10px',
-  border: '1px solid #d1d5db',
+  padding: '7px 10px',
+  border: '1px solid #cbd5e1',
   borderRadius: '8px',
   background: '#ffffff',
   color: '#0f172a',
@@ -920,23 +1505,30 @@ const modernInputStyle: React.CSSProperties = {
   transition: 'border-color 0.15s ease',
 }
 
-const harnessSubtleButtonStyle: React.CSSProperties = {
+const roundedBorderButtonStyle: React.CSSProperties = {
   background: '#ffffff',
-  border: '1px solid #d1d5db',
+  border: '1px solid #cbd5e1',
   borderRadius: '6px',
   padding: '4px 12px',
   fontSize: '12px',
   color: '#1e293b',
   cursor: 'pointer',
+  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.03)',
   transition: 'all 0.12s ease',
 }
 
-const harnessDangerButtonStyle: React.CSSProperties = {
-  background: 'transparent',
-  border: 'none',
-  padding: '4px 10px',
-  fontSize: '12px',
-  color: '#ef4444',
+const closeButtonStyle: React.CSSProperties = {
+  background: '#ffffff',
+  border: '1px solid #e2e8f0',
+  borderRadius: '6px',
+  width: '28px',
+  height: '28px',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: '18px',
+  color: '#94a3b8',
   cursor: 'pointer',
-  transition: 'all 0.12s ease',
+  padding: 0,
+  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)',
 }
