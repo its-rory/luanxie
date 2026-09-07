@@ -361,6 +361,9 @@ def call_structured(*, model: str, system: list | str, content, schema: type[T],
                     extra_headers = config.parse_custom_headers(raw_h)
                     break
 
+    if max_tokens is None or max_tokens == 4096:
+        max_tokens = config.get_model_max_tokens(model, 4096)
+
     client = get_client(resolved_provider, api_key=api_key, base_url=base_url, extra_headers=extra_headers)
 
     if client_type == "openai":

@@ -104,6 +104,48 @@ def parse_custom_headers(headers_raw: str | None) -> dict[str, str]:
     return result
 
 
+
+def get_model_params(model_name: str) -> dict:
+    """从 MODEL_PROVIDERS 配置中查找指定模型的参数配置 (context_window, max_tokens)"""
+    default_res = {"context_window": 128000, "max_tokens": 4096}
+    if not model_name:
+        return default_res
+
+    raw_providers = None
+    try:
+        from . import db
+        raw_providers = db.get_setting("MODEL_PROVIDERS")
+    except Exception:
+        pass
+    if not raw_providers:
+        raw_providers = os.getenv("MODEL_PROVIDERS") or _STATIC_DEFAULTS.get("MODEL_PROVIDERS", "")
+
+    if raw_providers:
+        try:
+            import json
+            prov_list = json.loads(raw_providers)
+            if isinstance(prov_list, list):
+                for p in prov_list:
+                    models = p.get("models", [])
+                    if isinstance(models, list):
+                        for m in models:
+                            if isinstance(m, dict) and m.get("name") == model_name:
+                                cw = m.get("contextWindow") or m.get("context_window") or 128000
+                                mt = m.get("maxOutputTokens") or m.get("max_output_tokens") or m.get("max_tokens") or 4096
+                                return {"context_window": int(cw), "max_tokens": int(mt)}
+                            elif isinstance(m, str) and m == model_name:
+                                return default_res
+        except Exception:
+            pass
+
+    return default_res
+
+def get_model_max_tokens(model_name: str, default: int = 4096) -> int:
+    return get_model_params(model_name).get("max_tokens", default)
+
+def get_model_context_window(model_name: str, default: int = 128000) -> int:
+    return get_model_params(model_name).get("context_window", default)
+
 def resolve_headers(headers_raw: str | None, base_url: str | None = None, provider: str | None = None) -> dict[str, str]:
     """解析自定义 Headers 并确保供应商专属要求（如 OpenCode Go 的会话路由头）。"""
     headers = parse_custom_headers(headers_raw)

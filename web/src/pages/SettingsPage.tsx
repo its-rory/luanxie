@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import type { Health } from '../types'
 
+export interface ModelDetail {
+  name: string
+  contextWindow: number
+  maxOutputTokens: number
+}
+
 export interface ModelProvider {
   id: string
   name: string
@@ -9,7 +15,7 @@ export interface ModelProvider {
   apiKey: string
   protocol: 'openai-completions' | 'anthropic-messages'
   headers: string
-  models: string[]
+  models: ModelDetail[]
   active?: boolean
 }
 
@@ -106,7 +112,12 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
 
   // 当前正在编辑的供应商（null 表示未展开编辑，'new' 表示新建，其余为编辑指定 id）
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
-  const [newModelInput, setNewModelInput] = useState('')
+
+  // 模型选择与参数编辑状态
+  const [modelInputText, setModelInputText] = useState('')
+  const [selectedModelName, setSelectedModelName] = useState('')
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
+
   const [providerForm, setProviderForm] = useState<ModelProvider>({
     id: '',
     name: '',
@@ -133,6 +144,27 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     fetchSettings()
   }, [])
 
+  // 规范化模型结构函数
+  const normalizeModel = (m: any): ModelDetail | null => {
+    if (!m) return null
+    if (typeof m === 'object') {
+      const name = String(m.name || '').trim()
+      if (!name || name === 'zen/go/v1' || name === 'zen/audio/v1') return null
+      return {
+        name,
+        contextWindow: Number(m.contextWindow || m.context_window) || 128000,
+        maxOutputTokens: Number(m.maxOutputTokens || m.max_output_tokens) || 4096,
+      }
+    }
+    const strName = String(m).trim()
+    if (!strName || strName === 'zen/go/v1' || strName === 'zen/audio/v1') return null
+    return {
+      name: strName,
+      contextWindow: 128000,
+      maxOutputTokens: 4096,
+    }
+  }
+
   const fetchSettings = async () => {
     setLoadingSettings(true)
     try {
@@ -147,11 +179,13 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
           const raw = JSON.parse(data.MODEL_PROVIDERS)
           if (Array.isArray(raw)) {
             parsedProviders = raw.map((p: any) => {
-              let models: string[] = []
+              let models: ModelDetail[] = []
               if (Array.isArray(p.models)) {
-                models = p.models.map((m: any) => String(m).trim()).filter(Boolean)
+                models = p.models.map(normalizeModel).filter(Boolean) as ModelDetail[]
               } else if (p.models && typeof p.models === 'object') {
-                models = Array.from(new Set(Object.values(p.models).map((m: any) => String(m).trim()).filter(Boolean))) as string[]
+                models = Array.from(new Set(Object.values(p.models)))
+                  .map(normalizeModel)
+                  .filter(Boolean) as ModelDetail[]
               }
               return {
                 id: p.id || '',
@@ -160,10 +194,10 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                 apiKey: p.apiKey || '',
                 protocol: p.protocol || 'openai-completions',
                 headers: p.headers || '',
-                models: (() => {
-                  const cleaned = models.filter(m => m !== 'zen/go/v1' && m !== 'zen/audio/v1')
-                  return cleaned.length > 0 ? cleaned : ['deepseek-v4-flash']
-                })(),
+                models:
+                  models.length > 0
+                    ? models
+                    : [{ name: 'deepseek-v4-flash', contextWindow: 128000, maxOutputTokens: 4096 }],
                 active: Boolean(p.active),
               }
             })
@@ -173,7 +207,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
         }
       }
 
-      // 若未存储供应商列表，则添加默认的 opencode-go 与 deepseek 模版
+      // 若未存储供应商列表，则添加默认模版
       if (!parsedProviders || parsedProviders.length === 0) {
         parsedProviders = [
           {
@@ -182,8 +216,12 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
             baseUrl: data.AUDIO_BASE_URL || 'https://opencode.ai/zen/go/v1',
             apiKey: data.AUDIO_API_KEY || '',
             protocol: 'openai-completions',
-            headers: data.AUDIO_HEADERS || 'x-opencode-session: luanxie-session-affinity-01\nx-opencode-client: luanxie',
-            models: ['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp', 'mimo-v2.5'],
+            headers: data.AUDIO_HEADERS || 'x-opencode-session: luanxie-session-affinity-01\\nx-opencode-client: luanxie',
+            models: [
+              { name: 'deepseek-v4-flash', contextWindow: 128000, maxOutputTokens: 4096 },
+              { name: 'deepseek-v4-flash-vision-exp', contextWindow: 128000, maxOutputTokens: 4096 },
+              { name: 'mimo-v2.5', contextWindow: 32768, maxOutputTokens: 4096 },
+            ],
             active: true,
           },
           {
@@ -193,7 +231,10 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
             apiKey: '',
             protocol: 'openai-completions',
             headers: '',
-            models: ['deepseek-chat', 'deepseek-reasoner'],
+            models: [
+              { name: 'deepseek-chat', contextWindow: 128000, maxOutputTokens: 8192 },
+              { name: 'deepseek-reasoner', contextWindow: 128000, maxOutputTokens: 8192 },
+            ],
             active: false,
           },
         ]
@@ -223,19 +264,19 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
 
       if (!parsedGroups.text?.providerId && parsedProviders.length > 0) {
         const p = matchProvider(data.TEXT_PROVIDER_NAME, data.TEXT_BASE_URL)
-        parsedGroups.text = { providerId: p.id, model: data.TEXT_MODEL || p.models[0] || '' }
+        parsedGroups.text = { providerId: p.id, model: data.TEXT_MODEL || p.models[0]?.name || '' }
       }
       if (!parsedGroups.image?.providerId && parsedProviders.length > 0) {
         const p = matchProvider(data.IMAGE_PROVIDER_NAME, data.IMAGE_BASE_URL)
-        parsedGroups.image = { providerId: p.id, model: data.IMAGE_MODEL || p.models[0] || '' }
+        parsedGroups.image = { providerId: p.id, model: data.IMAGE_MODEL || p.models[0]?.name || '' }
       }
       if (!parsedGroups.audio?.providerId && parsedProviders.length > 0) {
         const p = matchProvider(data.AUDIO_PROVIDER_NAME, data.AUDIO_BASE_URL)
-        parsedGroups.audio = { providerId: p.id, model: data.AUDIO_MODEL || p.models[0] || '' }
+        parsedGroups.audio = { providerId: p.id, model: data.AUDIO_MODEL || p.models[0]?.name || '' }
       }
       if (!parsedGroups.merge?.providerId && parsedProviders.length > 0) {
         const p = matchProvider(data.MERGE_PROVIDER_NAME, data.MERGE_BASE_URL)
-        parsedGroups.merge = { providerId: p.id, model: data.MERGE_MODEL || p.models[0] || '' }
+        parsedGroups.merge = { providerId: p.id, model: data.MERGE_MODEL || p.models[0]?.name || '' }
       }
 
       setModelGroups(parsedGroups)
@@ -248,6 +289,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
 
   // 开启添加供应商
   const handleAddNewProvider = () => {
+    const defaultM: ModelDetail = { name: 'deepseek-v4-flash', contextWindow: 128000, maxOutputTokens: 4096 }
     setProviderForm({
       id: `provider-${Date.now().toString().slice(-4)}`,
       name: '',
@@ -255,10 +297,12 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
       apiKey: '',
       protocol: 'openai-completions',
       headers: '',
-      models: ['deepseek-v4-flash'],
+      models: [defaultM],
       active: providers.length === 0,
     })
-    setNewModelInput('')
+    setSelectedModelName(defaultM.name)
+    setModelInputText(defaultM.name)
+    setIsModelDropdownOpen(false)
     setEditingProviderId('new')
     setTestState({ status: 'idle', message: '' })
   }
@@ -266,7 +310,10 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
   // 开启编辑供应商
   const handleEditProvider = (p: ModelProvider) => {
     setProviderForm(JSON.parse(JSON.stringify(p)))
-    setNewModelInput('')
+    const firstM = p.models[0]?.name || ''
+    setSelectedModelName(firstM)
+    setModelInputText(firstM)
+    setIsModelDropdownOpen(false)
     setEditingProviderId(p.id)
     setTestState({ status: 'idle', message: '' })
   }
@@ -297,25 +344,47 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
   }
 
   // 为当前编辑的供应商添加模型
-  const handleAddModelTag = () => {
-    const trimmed = newModelInput.trim()
+  const handleAddModel = () => {
+    const trimmed = modelInputText.trim()
     if (!trimmed) return
-    if (providerForm.models.includes(trimmed)) {
-      showToast('该模型已存在')
+    const existing = providerForm.models.find(m => m.name.toLowerCase() === trimmed.toLowerCase())
+    if (existing) {
+      showToast('该模型已存在，已为您选中')
+      setSelectedModelName(existing.name)
       return
+    }
+    const newModel: ModelDetail = {
+      name: trimmed,
+      contextWindow: 128000,
+      maxOutputTokens: 4096,
     }
     setProviderForm(prev => ({
       ...prev,
-      models: [...prev.models, trimmed],
+      models: [...prev.models, newModel],
     }))
-    setNewModelInput('')
+    setSelectedModelName(trimmed)
+    showToast(`已添加模型：${trimmed}`)
   }
 
   // 从当前编辑的供应商中移除模型
-  const handleRemoveModelTag = (m: string) => {
+  const handleDeleteModel = (modelName: string) => {
+    const updated = providerForm.models.filter(m => m.name !== modelName)
     setProviderForm(prev => ({
       ...prev,
-      models: prev.models.filter(item => item !== m),
+      models: updated,
+    }))
+    if (selectedModelName === modelName) {
+      const next = updated[0]?.name || ''
+      setSelectedModelName(next)
+      setModelInputText(next)
+    }
+  }
+
+  // 修改当前选中模型的上下文窗口或最大输出Token
+  const handleUpdateCurrentModelParam = (field: 'contextWindow' | 'maxOutputTokens', value: number) => {
+    setProviderForm(prev => ({
+      ...prev,
+      models: prev.models.map(m => (m.name === selectedModelName ? { ...m, [field]: value } : m)),
     }))
   }
 
@@ -423,22 +492,22 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
 
         TEXT_PROVIDER_NAME: textP.name || textP.id,
         TEXT_BASE_URL: textP.baseUrl,
-        TEXT_MODEL: modelGroups.text.model || textP.models[0] || 'deepseek-v4-flash',
+        TEXT_MODEL: modelGroups.text.model || textP.models[0]?.name || 'deepseek-v4-flash',
         TEXT_HEADERS: textP.headers || '',
 
         IMAGE_PROVIDER_NAME: imgP.name || imgP.id,
         IMAGE_BASE_URL: imgP.baseUrl,
-        IMAGE_MODEL: modelGroups.image.model || imgP.models[0] || 'deepseek-v4-flash-vision-exp',
+        IMAGE_MODEL: modelGroups.image.model || imgP.models[0]?.name || 'deepseek-v4-flash-vision-exp',
         IMAGE_HEADERS: imgP.headers || '',
 
         AUDIO_PROVIDER_NAME: audioP.name || audioP.id,
         AUDIO_BASE_URL: audioP.baseUrl,
-        AUDIO_MODEL: modelGroups.audio.model || audioP.models[0] || 'mimo-v2.5',
+        AUDIO_MODEL: modelGroups.audio.model || audioP.models[0]?.name || 'mimo-v2.5',
         AUDIO_HEADERS: audioP.headers || '',
 
         MERGE_PROVIDER_NAME: mergeP.name || mergeP.id,
         MERGE_BASE_URL: mergeP.baseUrl,
-        MERGE_MODEL: modelGroups.merge.model || mergeP.models[0] || 'deepseek-v4-flash',
+        MERGE_MODEL: modelGroups.merge.model || mergeP.models[0]?.name || 'deepseek-v4-flash',
         MERGE_HEADERS: mergeP.headers || '',
       }
 
@@ -486,7 +555,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
       return
     }
 
-    const testModel = providerForm.models[0] || 'deepseek-v4-flash'
+    const testModel = selectedModelName || providerForm.models[0]?.name || 'deepseek-v4-flash'
     setTestState({ status: 'testing', message: '测试连接中…' })
     try {
       const res = await api.testSettings({
@@ -563,6 +632,8 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
       modelGroups.merge?.providerId &&
       modelGroups.merge?.model
   )
+
+  const currentSelectedModel = providerForm.models.find(m => m.name === selectedModelName)
 
   return (
     <div className="fade-in">
@@ -987,7 +1058,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                     </div>
                     <textarea
                       rows={3}
-                      placeholder={"x-opencode-session: luanxie-session-affinity-01\nx-opencode-client: luanxie"}
+                      placeholder={"x-opencode-session: luanxie-session-affinity-01\\nx-opencode-client: luanxie"}
                       value={providerForm.headers}
                       onChange={e => setProviderForm(prev => ({ ...prev, headers: e.target.value }))}
                       style={{
@@ -1003,82 +1074,205 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                     </p>
                   </div>
 
-                  {/* 可用模型列表管理 (支持手动添加并保存) */}
+                  {/* 模型管理：输入模型名 + 向下箭头 + 添加模型按钮 + 对应模型上下文/Token设置 */}
                   <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '10px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label style={formLabelStyle}>可用模型列表</label>
-                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>添加后可在“模型分组”中指定选用</span>
+                      <label style={formLabelStyle}>可用模型配置</label>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>点击箭头选择已有模型，或输入后添加</span>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+
+                    <div style={{ position: 'relative', display: 'flex', gap: '6px', marginTop: '4px', alignItems: 'center' }}>
+                      {/* 输入模型名文本框 */}
                       <input
                         type="text"
-                        placeholder="输入模型名，如 deepseek-v4-flash"
-                        value={newModelInput}
-                        onChange={e => setNewModelInput(e.target.value)}
+                        placeholder="输入或选择模型名，如 deepseek-v4-flash"
+                        value={modelInputText}
+                        onChange={e => {
+                          const val = e.target.value
+                          setModelInputText(val)
+                          const hit = providerForm.models.find(m => m.name.toLowerCase() === val.trim().toLowerCase())
+                          if (hit) setSelectedModelName(hit.name)
+                        }}
                         onKeyDown={e => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
-                            handleAddModelTag()
+                            handleAddModel()
                           }
                         }}
-                        style={modernInputStyle}
+                        style={{ ...modernInputStyle, flex: 1 }}
                       />
+
+                      {/* 向下箭头按钮（点击弹出已有保存的模型） */}
                       <button
                         type="button"
-                        onClick={handleAddModelTag}
+                        onClick={() => setIsModelDropdownOpen(prev => !prev)}
                         style={{
                           ...roundedBorderButtonStyle,
-                          padding: '6px 14px',
+                          width: '36px',
+                          height: '36px',
+                          minWidth: '36px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 0,
+                          fontSize: '13px',
+                          color: '#475569',
+                          cursor: 'pointer',
+                        }}
+                        title="展开已有保存的模型"
+                      >
+                        ▾
+                      </button>
+
+                      {/* 右侧的添加模型按钮 */}
+                      <button
+                        type="button"
+                        onClick={handleAddModel}
+                        style={{
+                          ...roundedBorderButtonStyle,
+                          padding: '7px 14px',
                           whiteSpace: 'nowrap',
+                          fontWeight: 500,
                         }}
                       >
                         + 添加模型
                       </button>
-                    </div>
 
-                    {/* 已添加模型列表标签 */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
-                      {providerForm.models.length === 0 && (
-                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-                          暂无模型，请在上方输入模型名后点击“添加模型”。
-                        </span>
-                      )}
-                      {providerForm.models.map(m => (
-                        <span
-                          key={m}
+                      {/* 点击向下箭头弹出的下拉菜单 */}
+                      {isModelDropdownOpen && (
+                        <div
                           style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px',
+                            position: 'absolute',
+                            top: 'calc(100% + 4px)',
+                            left: 0,
+                            right: 0,
                             background: '#ffffff',
                             border: '1px solid #cbd5e1',
-                            borderRadius: '16px',
-                            padding: '3px 10px',
-                            fontSize: '12px',
-                            color: '#1e293b',
-                            boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                            borderRadius: '8px',
+                            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+                            zIndex: 60,
+                            maxHeight: '220px',
+                            overflowY: 'auto',
                           }}
                         >
-                          <span>{m}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveModelTag(m)}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#94a3b8',
-                              cursor: 'pointer',
-                              padding: '0 2px',
-                              fontSize: '14px',
-                              lineHeight: 1,
-                            }}
-                            title="删除该模型"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
+                          {providerForm.models.length === 0 ? (
+                            <div style={{ padding: '12px 14px', fontSize: '12px', color: '#94a3b8' }}>
+                              暂无已保存模型，请在输入框输入后点击“添加模型”。
+                            </div>
+                          ) : (
+                            providerForm.models.map(m => {
+                              const isCur = m.name === selectedModelName
+                              return (
+                                <div
+                                  key={m.name}
+                                  onClick={() => {
+                                    setSelectedModelName(m.name)
+                                    setModelInputText(m.name)
+                                    setIsModelDropdownOpen(false)
+                                  }}
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '9px 12px',
+                                    cursor: 'pointer',
+                                    background: isCur ? '#eff6ff' : '#ffffff',
+                                    borderBottom: '1px solid #f1f5f9',
+                                    transition: 'background 0.1s ease',
+                                  }}
+                                  onMouseOver={e => {
+                                    if (!isCur) e.currentTarget.style.background = '#f8fafc'
+                                  }}
+                                  onMouseOut={e => {
+                                    if (!isCur) e.currentTarget.style.background = '#ffffff'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '13px', fontWeight: isCur ? 600 : 400, color: isCur ? '#2563eb' : '#1e293b' }}>
+                                      {m.name}
+                                    </span>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                                      (上下文 {m.contextWindow} / 输出 {m.maxOutputTokens})
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={e => {
+                                      e.stopPropagation()
+                                      handleDeleteModel(m.name)
+                                    }}
+                                    style={{
+                                      background: '#ffffff',
+                                      border: '1px solid #fca5a5',
+                                      borderRadius: '4px',
+                                      color: '#ef4444',
+                                      fontSize: '11px',
+                                      padding: '1px 6px',
+                                      cursor: 'pointer',
+                                    }}
+                                    title="删除该模型"
+                                  >
+                                    删除
+                                  </button>
+                                </div>
+                              )
+                            })
+                          )}
+                        </div>
+                      )}
                     </div>
+
+                    {/* 选择特定模型后，下方出现的两个标签名及对应文本框 */}
+                    {currentSelectedModel && (
+                      <div
+                        style={{
+                          marginTop: '10px',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '8px',
+                          padding: '12px 14px',
+                          background: '#ffffff',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '10px',
+                          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>
+                            当前模型参数 · <span style={{ color: '#2563eb' }}>{currentSelectedModel.name}</span>
+                          </span>
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>数值与后台调用参数自动绑定</span>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                          {/* 标签名 1：上下文窗口 */}
+                          <div>
+                            <label style={formLabelStyle}>上下文窗口</label>
+                            <input
+                              type="number"
+                              placeholder="128000"
+                              value={currentSelectedModel.contextWindow}
+                              onChange={e => handleUpdateCurrentModelParam('contextWindow', parseInt(e.target.value, 10) || 0)}
+                              style={modernInputStyle}
+                            />
+                            <p style={formHelpTextStyle}>模型可处理的最大上下文 Tokens 长度（如 128000）。</p>
+                          </div>
+
+                          {/* 标签名 2：最大输出token数 */}
+                          <div>
+                            <label style={formLabelStyle}>最大输出token数</label>
+                            <input
+                              type="number"
+                              placeholder="4096"
+                              value={currentSelectedModel.maxOutputTokens}
+                              onChange={e => handleUpdateCurrentModelParam('maxOutputTokens', parseInt(e.target.value, 10) || 0)}
+                              style={modernInputStyle}
+                            />
+                            <p style={formHelpTextStyle}>单次调用允许生成的最大 Token 数量（如 4096 / 8192）。</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* 展开面板底栏动作 */}
@@ -1182,7 +1376,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                       onChange={e => {
                         const newProvId = e.target.value
                         const p = providers.find(item => item.id === newProvId)
-                        const nextModel = p && p.models.length > 0 ? p.models[0] : ''
+                        const nextModel = p && p.models.length > 0 ? p.models[0].name : ''
                         setModelGroups(prev => ({
                           ...prev,
                           text: { providerId: newProvId, model: nextModel },
@@ -1216,7 +1410,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                             <option value="">(该供应商未添加模型)</option>
                           )}
                           {availableModels.map(m => (
-                            <option key={m} value={m}>{m}</option>
+                            <option key={m.name} value={m.name}>{m.name}</option>
                           ))}
                         </select>
                       )
@@ -1239,7 +1433,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                       onChange={e => {
                         const newProvId = e.target.value
                         const p = providers.find(item => item.id === newProvId)
-                        const nextModel = p && p.models.length > 0 ? p.models[0] : ''
+                        const nextModel = p && p.models.length > 0 ? p.models[0].name : ''
                         setModelGroups(prev => ({
                           ...prev,
                           image: { providerId: newProvId, model: nextModel },
@@ -1273,7 +1467,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                             <option value="">(该供应商未添加模型)</option>
                           )}
                           {availableModels.map(m => (
-                            <option key={m} value={m}>{m}</option>
+                            <option key={m.name} value={m.name}>{m.name}</option>
                           ))}
                         </select>
                       )
@@ -1296,7 +1490,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                       onChange={e => {
                         const newProvId = e.target.value
                         const p = providers.find(item => item.id === newProvId)
-                        const nextModel = p && p.models.length > 0 ? p.models[0] : ''
+                        const nextModel = p && p.models.length > 0 ? p.models[0].name : ''
                         setModelGroups(prev => ({
                           ...prev,
                           audio: { providerId: newProvId, model: nextModel },
@@ -1330,7 +1524,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                             <option value="">(该供应商未添加模型)</option>
                           )}
                           {availableModels.map(m => (
-                            <option key={m} value={m}>{m}</option>
+                            <option key={m.name} value={m.name}>{m.name}</option>
                           ))}
                         </select>
                       )
@@ -1353,7 +1547,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                       onChange={e => {
                         const newProvId = e.target.value
                         const p = providers.find(item => item.id === newProvId)
-                        const nextModel = p && p.models.length > 0 ? p.models[0] : ''
+                        const nextModel = p && p.models.length > 0 ? p.models[0].name : ''
                         setModelGroups(prev => ({
                           ...prev,
                           merge: { providerId: newProvId, model: nextModel },
@@ -1387,7 +1581,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                             <option value="">(该供应商未添加模型)</option>
                           )}
                           {availableModels.map(m => (
-                            <option key={m} value={m}>{m}</option>
+                            <option key={m.name} value={m.name}>{m.name}</option>
                           ))}
                         </select>
                       )
