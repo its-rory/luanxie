@@ -33,7 +33,8 @@ def _ensure_mp3_format(audio_path: str) -> str:
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            check=True
+            check=True,
+            timeout=30.0
         )
         return output_path
     except Exception:
@@ -61,7 +62,8 @@ def _ensure_wav_format(audio_path: str) -> str:
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            check=True
+            check=True,
+            timeout=30.0
         )
         return output_path
     except Exception:

@@ -61,6 +61,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS topics_fts USING fts5(
 
 CREATE INDEX IF NOT EXISTS idx_captures_status ON captures(status);
 CREATE INDEX IF NOT EXISTS idx_captures_created ON captures(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_captures_topic ON captures(topic_id);
+CREATE INDEX IF NOT EXISTS idx_topics_updated ON topics(updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
@@ -169,7 +171,11 @@ def create_capture(type_: str, raw_text: str | None = None,
 
 
 def get_capture(capture_id: str) -> dict | None:
-    cur = get_conn().execute("SELECT * FROM captures WHERE id=?", (capture_id,))
+    cur = get_conn().execute(
+        "SELECT c.*, t.title as topic_title FROM captures c "
+        "LEFT JOIN topics t ON c.topic_id = t.id WHERE c.id=?",
+        (capture_id,)
+    )
     row = cur.fetchone()
     return dict(row) if row else None
 
@@ -178,11 +184,15 @@ def list_captures(status: str | None = None, limit: int = 50, offset: int = 0) -
     conn = get_conn()
     if status:
         cur = conn.execute(
-            "SELECT * FROM captures WHERE status=? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "SELECT c.*, t.title as topic_title FROM captures c "
+            "LEFT JOIN topics t ON c.topic_id = t.id "
+            "WHERE c.status=? ORDER BY c.created_at DESC LIMIT ? OFFSET ?",
             (status, limit, offset))
     else:
         cur = conn.execute(
-            "SELECT * FROM captures ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "SELECT c.*, t.title as topic_title FROM captures c "
+            "LEFT JOIN topics t ON c.topic_id = t.id "
+            "ORDER BY c.created_at DESC LIMIT ? OFFSET ?",
             (limit, offset))
     return _rows(cur)
 
@@ -301,19 +311,59 @@ def list_topics(q: str | None = None, limit: int = 50, offset: int = 0) -> list[
 
 
 def topic_candidates(query_text: str, limit: int = 30) -> list[dict]:
-    """FTS5 预筛候选主题(主题多时用);查询词取正文的非标点词。"""
-    words = [w for w in "".join(
-        c if c.isalnum() else " " for c in query_text).split() if len(w) > 1]
-    if not words:
+    """FTS5 预筛候选主题(主题多时用);支持中文 n-gram 词段与 LIKE 模糊兜底。"""
+    clean_chars = "".join(c if c.isalnum() else " " for c in (query_text or ""))
+    words = [w for w in clean_chars.split() if len(w) > 1]
+    
+    cjk_grams = []
+    for w in words:
+        if any(ord(ch) > 127 for ch in w):
+            for sz in (2, 3):
+                for i in range(len(w) - sz + 1):
+                    cjk_grams.append(w[i:i+sz])
+                    
+    all_tokens = words[:15] + cjk_grams[:15]
+    if not all_tokens:
         return []
-    match = " OR ".join(f'"{w}"' for w in words[:20])
-    try:
-        cur = get_conn().execute(
-            "SELECT t.* FROM topics t JOIN topics_fts f ON t.id=f.topic_id"
-            " WHERE topics_fts MATCH ? LIMIT ?", (match, limit))
-        return _rows(cur)
-    except sqlite3.OperationalError:
-        return []
+        
+    results = []
+    seen_ids = set()
+    
+    fts_tokens = [t for t in all_tokens if '"' not in t and '*' not in t][:20]
+    if fts_tokens:
+        match_expr = " OR ".join(f'"{t}"' for t in fts_tokens)
+        try:
+            cur = get_conn().execute(
+                "SELECT t.* FROM topics t JOIN topics_fts f ON t.id=f.topic_id"
+                " WHERE topics_fts MATCH ? LIMIT ?", (match_expr, limit))
+            for r in _rows(cur):
+                if r["id"] not in seen_ids:
+                    seen_ids.add(r["id"])
+                    results.append(r)
+        except sqlite3.OperationalError:
+            pass
+
+    if len(results) < 10:
+        sample_grams = (cjk_grams[:8] or words[:5])
+        for gram in sample_grams:
+            if len(results) >= limit:
+                break
+            try:
+                like_pat = f"%{gram}%"
+                cur = get_conn().execute(
+                    "SELECT * FROM topics WHERE title LIKE ? OR summary LIKE ? ORDER BY updated_at DESC LIMIT 10",
+                    (like_pat, like_pat)
+                )
+                for r in _rows(cur):
+                    if r["id"] not in seen_ids:
+                        seen_ids.add(r["id"])
+                        results.append(r)
+                        if len(results) >= limit:
+                            break
+            except Exception:
+                pass
+                
+    return results[:limit]
 
 
 def update_topic(topic_id: str, capture_id: str | None, *, title: str,
@@ -453,6 +503,30 @@ def verify_session(token: str) -> bool:
         pass
     return False
 
+
+def clear_all_sessions() -> None:
+    conn = get_conn()
+    with conn:
+        conn.execute("DELETE FROM sessions")
+
+
+def delete_capture_and_cleanup_topic(capture_id: str) -> dict:
+    """删除单条 capture（无论状态是否为 done），并级联清理或更新对应 topic。"""
+    cap = get_capture(capture_id)
+    if not cap:
+        return {"ok": False, "topic_deleted": False}
+    topic_id = cap.get("topic_id")
+    delete_capture(capture_id)
+    topic_deleted = False
+    if topic_id:
+        remaining = list_captures_by_topic(topic_id)
+        if not remaining:
+            delete_topic(topic_id)
+            topic_deleted = True
+        else:
+            new_latest = remaining[-1]
+            update_topic_summary(topic_id, (new_latest.get("clean_text") or "")[:100])
+    return {"ok": True, "topic_deleted": topic_deleted}
 
 def delete_session(token: str) -> None:
     conn = get_conn()

@@ -191,6 +191,13 @@ async def _process(capture_id: str) -> None:
         except ImportError:
             pass
 
+        try:
+            import httpx
+            if isinstance(e, (httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)):
+                is_api_err = True
+        except ImportError:
+            pass
+
         if is_api_err:
             await _retry_or_fail(capture_id, f"API 暂时性错误: {sanitize_exception(e)}", retryable=True)
         else:
@@ -217,19 +224,26 @@ async def _retry_or_fail(capture_id: str, error: str, *, retryable: bool) -> Non
         db.log(capture_id, "error", "error", error)
 
 
+_sem = asyncio.Semaphore(3)  # 最多允许 3 个 capture 并行执行前置转写与分类
+
 async def consumer() -> None:
     # 崩溃恢复:非终态的 captures 重新入队
     for cap in db.pending_captures():
         await enqueue(cap["id"])
+
+    async def _safe_process(cid: str):
+        async with _sem:
+            try:
+                await _process(cid)
+            except Exception:
+                traceback.print_exc()
+            finally:
+                _inflight.discard(cid)
+                _queue.task_done()
+
     while True:
         capture_id = await _queue.get()
-        try:
-            await _process(capture_id)
-        except Exception:
-            traceback.print_exc()
-        finally:
-            _inflight.discard(capture_id)
-            _queue.task_done()
+        asyncio.create_task(_safe_process(capture_id))
 
 
 def queue_depth() -> int:

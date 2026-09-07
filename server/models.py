@@ -14,14 +14,6 @@ class TopicDecision(BaseModel):
     reason: str
 
 
-class MergedNote(BaseModel):
-    """merge 阶段的结构化输出:完整重写后的主题笔记。"""
-    title: str
-    summary: str
-    body_md: str
-    tags: list[str]
-
-
 class ReviewAction(BaseModel):
     """待确认队列的用户裁决。"""
     action: Literal["approve", "reassign", "reject"]

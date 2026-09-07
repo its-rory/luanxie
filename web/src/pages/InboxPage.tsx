@@ -52,6 +52,7 @@ export default function InboxPage({ tick, openTopic, showToast }: {
     try {
       await api.deleteCapture(id)
       setItems((xs) => xs.filter((x) => x.id !== id))
+      showToast('已删除')
     } catch (e) { showToast((e as Error).message) }
   }
 
@@ -85,7 +86,15 @@ export default function InboxPage({ tick, openTopic, showToast }: {
             {c.status === 'done' && c.topic_id && (
               <>
                 <span className="arrow">→</span>
-                <TopicName id={c.topic_id} onClick={() => openTopic(c.topic_id!)} />
+                <span
+                  className="topic-link"
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => openTopic(c.topic_id!)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTopic(c.topic_id!); } }}
+                >
+                  [[{c.topic_title || '查看主题'}]]
+                </span>
               </>
             )}
             <span>{new Date(c.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
@@ -159,21 +168,5 @@ export default function InboxPage({ tick, openTopic, showToast }: {
         </div>
       ))}
     </div>
-  )
-}
-
-function TopicName({ id, onClick }: { id: string; onClick: () => void }) {
-  const [title, setTitle] = useState('…')
-  useEffect(() => { api.topic(id).then((t) => setTitle(t.title)).catch(() => setTitle('?')) }, [id])
-  return (
-    <span
-      className="topic-link"
-      role="link"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
-    >
-      [[{title}]]
-    </span>
   )
 }

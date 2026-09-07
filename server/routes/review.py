@@ -37,15 +37,15 @@ async def decide(capture_id: str, action: ReviewAction):
     if cap["status"] != "awaiting_review":
         raise HTTPException(400, f"状态 {cap['status']} 不在待确认队列")
 
-    try:
-        decision = TopicDecision.model_validate_json(cap["suggestion"])
-    except (ValueError, TypeError) as e:
-        raise HTTPException(400, f"该条目的 AI 建议数据已损坏,无法裁决: {e}")
-
     if action.action == "reject":
         db.update_capture(capture_id, status="rejected")
         db.log(capture_id, "review", "ok", "用户拒绝归档")
         return {"ok": True, "status": "rejected"}
+
+    try:
+        decision = TopicDecision.model_validate_json(cap["suggestion"])
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, f"该条目的 AI 建议数据已损坏,无法裁决: {e}")
 
     if action.action == "reassign":
         if action.topic_id:

@@ -1,3 +1,4 @@
+import hashlib
 import hmac
 import asyncio
 import secrets
@@ -9,6 +10,28 @@ from pydantic import BaseModel
 
 from .. import config, db
 from .._net import client_ip as _resolve_client_ip
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    iterations = 100_000
+    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return f"pbkdf2_sha256${iterations}${salt.hex()}${derived.hex()}"
+
+def verify_password(plain_password: str, stored_hash: str) -> bool:
+    if not stored_hash:
+        return False
+    if stored_hash.startswith("pbkdf2_sha256$"):
+        try:
+            _, iter_str, salt_hex, hash_hex = stored_hash.split("$", 3)
+            iterations = int(iter_str)
+            salt = bytes.fromhex(salt_hex)
+            derived = hashlib.pbkdf2_hmac("sha256", plain_password.encode("utf-8"), salt, iterations)
+            return hmac.compare_digest(derived.hex(), hash_hex)
+        except Exception:
+            return False
+    # 兼容过渡期原有的明文密码比对
+    return hmac.compare_digest(plain_password, stored_hash)
+
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -56,6 +79,15 @@ def _record_fail(ip: str) -> None:
             _locks_until[ip] = now + _LOGIN_LOCK_SECONDS
             _failed_attempts[ip] = []
 
+        # 清理已过期 IP，防止长期内存泄漏
+        if len(_failed_attempts) > 100:
+            dead_ips = [k for k, v in _failed_attempts.items() if not v or (now - v[-1] >= _LOGIN_FAIL_WINDOW)]
+            for k in dead_ips:
+                del _failed_attempts[k]
+            dead_locks = [k for k, until in _locks_until.items() if until <= now]
+            for k in dead_locks:
+                del _locks_until[k]
+
 
 def _reset_fails(ip: str) -> None:
     with _fail_lock:
@@ -75,7 +107,7 @@ async def login(payload: LoginRequest, response: Response, request: Request):
     if remaining > 0:
         raise HTTPException(status_code=429, detail=f"登录尝试过多,请 {int(remaining)} 秒后再试")
 
-    if not hmac.compare_digest(payload.password, config.ADMIN_PASSWORD):
+    if not verify_password(payload.password, config.ADMIN_PASSWORD):
         _record_fail(ip)
         await asyncio.sleep(2)
         raise HTTPException(status_code=401, detail="密码错误")

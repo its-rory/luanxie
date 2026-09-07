@@ -196,12 +196,25 @@ def get_settings():
         "MODEL_GROUPS",
     ]
     result = {}
+    import json
     for k in keys:
         val = getattr(config, k, "")
         if "API_KEY" in k and val:
             result[k] = "••••••••"
         elif k == "ADMIN_PASSWORD" and val:
             result[k] = "••••••••"
+        elif k == "MODEL_PROVIDERS" and val:
+            try:
+                provs = json.loads(val)
+                if isinstance(provs, list):
+                    for p in provs:
+                        if isinstance(p, dict) and p.get("apiKey"):
+                            p["apiKey"] = "••••••••"
+                    result[k] = json.dumps(provs, ensure_ascii=False)
+                else:
+                    result[k] = val
+            except Exception:
+                result[k] = val
         else:
             result[k] = val
     return result
@@ -215,15 +228,43 @@ async def save_settings(payload: SettingsUpdate):
     if payload.AUTO_MERGE_NEW_CONFIDENCE not in allowed_confidences:
         raise HTTPException(400, f"无效的自动合并置信度(新主题): {payload.AUTO_MERGE_NEW_CONFIDENCE}")
 
+    import json
+    from .auth import hash_password
+
     new_pw = payload.ADMIN_PASSWORD or ""
     if new_pw not in ("", "••••••••"):
         if len(new_pw) < 6:
             raise HTTPException(400, "管理员密码至少 6 位")
         if new_pw == "admin":
             raise HTTPException(400, "管理员密码不能使用出厂弱密码 'admin'")
-        db.set_setting("ADMIN_PASSWORD", new_pw)
+        hashed_pw = hash_password(new_pw)
+        db.set_setting("ADMIN_PASSWORD", hashed_pw)
+        db.clear_all_sessions()  # 改密后吊销所有旧 Token 强制重新登录
 
     data = payload.model_dump()
+
+    # 处理 MODEL_PROVIDERS: 如果提交包含打码 key，保留已有真实 key
+    if data.get("MODEL_PROVIDERS"):
+        try:
+            incoming_provs = json.loads(data["MODEL_PROVIDERS"])
+            existing_raw = db.get_setting("MODEL_PROVIDERS", "")
+            existing_provs = json.loads(existing_raw) if existing_raw else []
+            existing_key_map = {
+                p.get("id"): p.get("apiKey")
+                for p in existing_provs
+                if isinstance(p, dict) and p.get("apiKey") and p.get("apiKey") != "••••••••"
+            }
+            if isinstance(incoming_provs, list):
+                for p in incoming_provs:
+                    if isinstance(p, dict):
+                        if p.get("apiKey") in ("••••••••", ""):
+                            pid = p.get("id")
+                            if pid in existing_key_map:
+                                p["apiKey"] = existing_key_map[pid]
+                data["MODEL_PROVIDERS"] = json.dumps(incoming_provs, ensure_ascii=False)
+        except Exception:
+            pass
+
     for k, v in data.items():
         if k == "ADMIN_PASSWORD":
             continue

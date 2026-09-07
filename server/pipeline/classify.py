@@ -10,8 +10,8 @@ from .llm import call_structured
 
 
 def _topic_list_block(query_text: str) -> str:
-    """主题清单:少于阈值全量,否则 FTS5 候选 + 最近更新兜底。"""
-    topics = db.list_topics()
+    """主题清单:少于阈值全量,否则 FTS5 候选 + 最近更新兜底。显式 limit=300 防截断。"""
+    topics = db.list_topics(limit=300)
     if not topics:
         return prompts.CLASSIFY_NO_TOPICS_NOTE
     partial = False

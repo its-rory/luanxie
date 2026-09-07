@@ -81,7 +81,8 @@ async def create_capture(request: Request, type: str = Form(...), text: str | No
                     ],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    check=True
+                    check=True,
+                    timeout=30.0
                 )
                 dest.unlink(missing_ok=True)
                 name = out_name
@@ -162,7 +163,8 @@ def delete_capture(capture_id: str):
     if not cap:
         raise HTTPException(404, "capture 不存在")
     if cap["status"] == "done":
-        raise HTTPException(400, "已合并进主题的 capture 不可删除")
+        # 允许在收件箱中直接删除已合并的 capture，执行级联清理与主题摘要更新
+        return db.delete_capture_and_cleanup_topic(capture_id)
     if cap["media_path"]:
         (config.DATA_DIR / cap["media_path"]).unlink(missing_ok=True)
     db.delete_capture(capture_id)

@@ -52,7 +52,7 @@ export default function CapturePage({ onDone, showToast }: {
       setBusy(true)
       try {
         const { blob, ext } = await handle.stop()
-        if (blob.size < 1000) { showToast('录音太短,未提交'); return }
+        if (elapsed < 1 && blob.size < 200) { showToast('录音太短,未提交'); return }
         await api.captureFile('audio', blob, `rec.${ext}`)
         onDone()
       } catch (e) {

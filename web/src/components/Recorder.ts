@@ -44,8 +44,15 @@ export async function compressImage(file: File, maxEdge = 1568): Promise<{ blob:
   canvas.height = Math.round(bitmap.height * scale)
   
   const ctx = canvas.getContext('2d')
-  if (!ctx) return { blob: file, ext: origExt }
-  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  if (!ctx) {
+    bitmap.close()
+    return { blob: file, ext: origExt }
+  }
+  try {
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  } finally {
+    bitmap.close()
+  }
 
   if (!canvas.toBlob) return { blob: file, ext: origExt }
   const blob = await new Promise<Blob | null>((res) => canvas.toBlob((b) => res(b), 'image/jpeg', 0.85))

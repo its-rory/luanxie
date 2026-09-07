@@ -58,7 +58,8 @@ def get_client(provider: str, api_key: str | None = None, base_url: str | None =
                 _clients[cache_key] = openai.OpenAI(
                     api_key=resolved_key,
                     base_url=resolved_url,
-                    default_headers=default_headers or None
+                    default_headers=default_headers or None,
+                    timeout=60.0
                 )
             return _clients[cache_key]
 
@@ -72,7 +73,8 @@ def get_client(provider: str, api_key: str | None = None, base_url: str | None =
                 _clients[cache_key] = anthropic.Anthropic(
                     api_key=resolved_key,
                     base_url=resolved_url,
-                    default_headers=default_headers or None
+                    default_headers=default_headers or None,
+                    timeout=60.0
                 )
             return _clients[cache_key]
     else:
