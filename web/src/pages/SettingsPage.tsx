@@ -2,6 +2,22 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import type { Health } from '../types'
 
+export interface ModelProvider {
+  id: string
+  name: string
+  baseUrl: string
+  apiKey: string
+  protocol: 'openai-completions' | 'anthropic-messages'
+  headers: string
+  models: {
+    text: string
+    image: string
+    audio: string
+    merge: string
+  }
+  active: boolean
+}
+
 interface SettingsState {
   TEXT_PROVIDER_NAME: string
   TEXT_API_KEY: string
@@ -27,72 +43,13 @@ interface SettingsState {
   MERGE_MODEL: string
   MERGE_HEADERS: string
 
+  MODEL_PROVIDERS: string
+
   ADMIN_PASSWORD: string
 
   AUTO_MERGE_EXISTING_CONFIDENCE: string
   AUTO_MERGE_NEW_CONFIDENCE: string
 }
-
-type TaskKey = 'text' | 'image' | 'audio' | 'merge'
-
-interface ProviderPreset {
-  name: string
-  label: string
-  baseUrl: string
-  defaultHeaders: string
-  models: Record<TaskKey, string>
-}
-
-const PROVIDER_PRESETS: ProviderPreset[] = [
-  {
-    name: 'OpenCodeGO',
-    label: 'OpenCode Go',
-    baseUrl: 'https://opencode.ai/zen/go/v1',
-    defaultHeaders: 'x-opencode-session: luanxie-session-affinity-01\nx-opencode-client: luanxie',
-    models: {
-      text: 'deepseek-v4-flash',
-      image: 'deepseek-v4-flash-vision-exp',
-      audio: 'mimo-v2.5',
-      merge: 'deepseek-v4-flash',
-    }
-  },
-  {
-    name: 'siliconflow',
-    label: 'SiliconFlow 硅基流动',
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    defaultHeaders: '',
-    models: {
-      text: 'deepseek-ai/DeepSeek-V3',
-      image: 'Qwen/Qwen3-VL-32B-Instruct',
-      audio: 'FunAudioLLM/SenseVoiceSmall',
-      merge: 'deepseek-ai/DeepSeek-V3',
-    }
-  },
-  {
-    name: 'openai',
-    label: 'OpenAI 官方',
-    baseUrl: 'https://api.openai.com/v1',
-    defaultHeaders: '',
-    models: {
-      text: 'gpt-4o-mini',
-      image: 'gpt-4o',
-      audio: 'whisper-1',
-      merge: 'gpt-4o',
-    }
-  },
-  {
-    name: 'anthropic',
-    label: 'Anthropic Claude',
-    baseUrl: 'https://api.anthropic.com/v1',
-    defaultHeaders: '',
-    models: {
-      text: 'claude-3-5-haiku-latest',
-      image: 'claude-3-5-sonnet-latest',
-      audio: '',
-      merge: 'claude-3-5-sonnet-latest',
-    }
-  },
-]
 
 export default function SettingsPage({ showToast, onLogout }: { showToast: (m: string) => void; onLogout: () => void }) {
   const [health, setHealth] = useState<Health | null>(null)
@@ -100,8 +57,8 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
   const [loadingSettings, setLoadingSettings] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  // Settings Form State
-  const [settings, setSettings] = useState<SettingsState>({
+  // 原始设置
+  const [rawSettings, setRawSettings] = useState<SettingsState>({
     TEXT_PROVIDER_NAME: '',
     TEXT_API_KEY: '',
     TEXT_BASE_URL: '',
@@ -122,29 +79,40 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     MERGE_BASE_URL: '',
     MERGE_MODEL: '',
     MERGE_HEADERS: '',
+    MODEL_PROVIDERS: '',
     ADMIN_PASSWORD: '',
     AUTO_MERGE_EXISTING_CONFIDENCE: 'medium',
     AUTO_MERGE_NEW_CONFIDENCE: 'high',
   })
 
-  // 折叠状态控制：各个任务模块是否展开参数
-  const [expandedSections, setExpandedSections] = useState<Record<TaskKey, boolean>>({
-    text: true,
-    image: true,
-    audio: true,
-    merge: true,
+  // 管理员密码临时输入
+  const [adminPassword, setAdminPassword] = useState('')
+
+  // 供应商列表
+  const [providers, setProviders] = useState<ModelProvider[]>([])
+
+  // 当前正在编辑的供应商（null 表示未展开编辑，'new' 表示新建，其他为编辑对应 id）
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
+  const [providerForm, setProviderForm] = useState<ModelProvider>({
+    id: '',
+    name: '',
+    baseUrl: '',
+    apiKey: '',
+    protocol: 'openai-completions',
+    headers: '',
+    models: {
+      text: '',
+      image: '',
+      audio: '',
+      merge: '',
+    },
+    active: false,
   })
 
-  const toggleSection = (task: TaskKey) => {
-    setExpandedSections(prev => ({ ...prev, [task]: !prev[task] }))
-  }
-
-  // Test states for each of the 4 sections: 'idle' | 'testing' | 'success' | 'error'
-  const [testStates, setTestStates] = useState<Record<string, { status: string; message: string }>>({
-    text: { status: 'idle', message: '' },
-    image: { status: 'idle', message: '' },
-    audio: { status: 'idle', message: '' },
-    merge: { status: 'idle', message: '' },
+  // 测试状态
+  const [testState, setTestState] = useState<{ status: 'idle' | 'testing' | 'success' | 'error'; message: string }>({
+    status: 'idle',
+    message: '',
   })
 
   const loadHealth = () => {
@@ -158,39 +126,58 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
   const openConfigModal = async () => {
     setLoadingSettings(true)
     try {
-      const data = await api.getSettings()
-      setSettings({
-        TEXT_PROVIDER_NAME: data.TEXT_PROVIDER_NAME || '',
-        TEXT_API_KEY: data.TEXT_API_KEY || '',
-        TEXT_BASE_URL: data.TEXT_BASE_URL || '',
-        TEXT_MODEL: data.TEXT_MODEL || '',
-        TEXT_HEADERS: data.TEXT_HEADERS || '',
-        IMAGE_PROVIDER_NAME: data.IMAGE_PROVIDER_NAME || '',
-        IMAGE_API_KEY: data.IMAGE_API_KEY || '',
-        IMAGE_BASE_URL: data.IMAGE_BASE_URL || '',
-        IMAGE_MODEL: data.IMAGE_MODEL || '',
-        IMAGE_HEADERS: data.IMAGE_HEADERS || '',
-        AUDIO_PROVIDER_NAME: data.AUDIO_PROVIDER_NAME || '',
-        AUDIO_API_KEY: data.AUDIO_API_KEY || '',
-        AUDIO_BASE_URL: data.AUDIO_BASE_URL || '',
-        AUDIO_MODEL: data.AUDIO_MODEL || '',
-        AUDIO_HEADERS: data.AUDIO_HEADERS || '',
-        MERGE_PROVIDER_NAME: data.MERGE_PROVIDER_NAME || '',
-        MERGE_API_KEY: data.MERGE_API_KEY || '',
-        MERGE_BASE_URL: data.MERGE_BASE_URL || '',
-        MERGE_MODEL: data.MERGE_MODEL || '',
-        MERGE_HEADERS: data.MERGE_HEADERS || '',
-        ADMIN_PASSWORD: data.ADMIN_PASSWORD || '',
-        AUTO_MERGE_EXISTING_CONFIDENCE: data.AUTO_MERGE_EXISTING_CONFIDENCE || 'medium',
-        AUTO_MERGE_NEW_CONFIDENCE: data.AUTO_MERGE_NEW_CONFIDENCE || 'high',
-      })
-      // Reset test states
-      setTestStates({
-        text: { status: 'idle', message: '' },
-        image: { status: 'idle', message: '' },
-        audio: { status: 'idle', message: '' },
-        merge: { status: 'idle', message: '' },
-      })
+      const data = (await api.getSettings()) as any
+      setRawSettings(data)
+      setAdminPassword(data.ADMIN_PASSWORD || '')
+
+      let parsedProviders: ModelProvider[] = []
+      if (data.MODEL_PROVIDERS) {
+        try {
+          parsedProviders = JSON.parse(data.MODEL_PROVIDERS)
+        } catch {
+          parsedProviders = []
+        }
+      }
+
+      // 如果未存储过提供商列表，从当前已有配置生成默认提供方
+      if (!parsedProviders || parsedProviders.length === 0) {
+        parsedProviders = [
+          {
+            id: 'opencode-go',
+            name: 'opencode-go',
+            baseUrl: data.AUDIO_BASE_URL || 'https://opencode.ai/zen/go/v1',
+            apiKey: data.AUDIO_API_KEY || '',
+            protocol: 'openai-completions',
+            headers: data.AUDIO_HEADERS || 'x-opencode-session: luanxie-session-affinity-01\nx-opencode-client: luanxie',
+            models: {
+              text: data.TEXT_MODEL || 'deepseek-v4-flash',
+              image: data.IMAGE_MODEL || 'deepseek-v4-flash-vision-exp',
+              audio: data.AUDIO_MODEL || 'mimo-v2.5',
+              merge: data.MERGE_MODEL || 'deepseek-v4-flash',
+            },
+            active: true,
+          },
+          {
+            id: 'deepseek',
+            name: 'DeepSeek',
+            baseUrl: 'https://api.deepseek.com/v1',
+            apiKey: '',
+            protocol: 'openai-completions',
+            headers: '',
+            models: {
+              text: 'deepseek-chat',
+              image: 'deepseek-chat',
+              audio: 'whisper-1',
+              merge: 'deepseek-chat',
+            },
+            active: false,
+          },
+        ]
+      }
+
+      setProviders(parsedProviders)
+      setEditingProviderId(null)
+      setTestState({ status: 'idle', message: '' })
       setShowModal(true)
     } catch (e) {
       showToast('获取 API 配置失败: ' + (e as Error).message)
@@ -199,66 +186,160 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     }
   }
 
-  const applyPreset = (task: TaskKey, preset: ProviderPreset) => {
-    const keyPrefix = task.toUpperCase()
-    setSettings(prev => ({
-      ...prev,
-      [`${keyPrefix}_PROVIDER_NAME`]: preset.name,
-      [`${keyPrefix}_BASE_URL`]: preset.baseUrl,
-      [`${keyPrefix}_MODEL`]: preset.models[task] || prev[`${keyPrefix}_MODEL` as keyof SettingsState],
-      [`${keyPrefix}_HEADERS`]: preset.defaultHeaders,
-    }))
-    // 自动展开该模块以供查看
-    setExpandedSections(prev => ({ ...prev, [task]: true }))
-    setTestStates(prev => ({ ...prev, [task]: { status: 'idle', message: '' } }))
+  // 开启添加供应商
+  const handleAddNewProvider = () => {
+    setProviderForm({
+      id: `custom-${Date.now().toString().slice(-4)}`,
+      name: '',
+      baseUrl: '',
+      apiKey: '',
+      protocol: 'openai-completions',
+      headers: '',
+      models: {
+        text: 'deepseek-v4-flash',
+        image: 'deepseek-v4-flash-vision-exp',
+        audio: 'mimo-v2.5',
+        merge: 'deepseek-v4-flash',
+      },
+      active: providers.length === 0,
+    })
+    setEditingProviderId('new')
+    setTestState({ status: 'idle', message: '' })
   }
 
-  const handleTest = async (task: TaskKey) => {
-    const keyPrefix = task.toUpperCase()
-    const provider = settings[`${keyPrefix}_PROVIDER_NAME` as keyof SettingsState] || ''
-    const api_key = settings[`${keyPrefix}_API_KEY` as keyof SettingsState] || ''
-    const base_url = settings[`${keyPrefix}_BASE_URL` as keyof SettingsState] || ''
-    const model = settings[`${keyPrefix}_MODEL` as keyof SettingsState] || ''
-    const headers = settings[`${keyPrefix}_HEADERS` as keyof SettingsState] || ''
+  // 开启编辑供应商
+  const handleEditProvider = (p: ModelProvider) => {
+    setProviderForm(JSON.parse(JSON.stringify(p)))
+    setEditingProviderId(p.id)
+    setTestState({ status: 'idle', message: '' })
+  }
 
-    if (!api_key) {
-      setTestStates(prev => ({ ...prev, [task]: { status: 'error', message: 'API Key 不能为空' } }))
+  // 删除供应商
+  const handleDeleteProvider = (id: string) => {
+    if (!confirm('确定要删除该模型供应商吗？')) return
+    const updated = providers.filter(p => p.id !== id)
+    if (updated.length > 0 && !updated.some(p => p.active)) {
+      updated[0].active = true
+    }
+    setProviders(updated)
+    if (editingProviderId === id) {
+      setEditingProviderId(null)
+    }
+    // 同步保存
+    persistProvidersAndSave(updated, adminPassword)
+  }
+
+  // 激活供应商
+  const handleActivateProvider = (id: string) => {
+    const updated = providers.map(p => ({
+      ...p,
+      active: p.id === id,
+    }))
+    setProviders(updated)
+    persistProvidersAndSave(updated, adminPassword)
+    showToast('已切换当前使用的模型供应商')
+  }
+
+  // 保存当前编辑的供应商
+  const handleSaveProviderForm = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!providerForm.name.trim()) {
+      showToast('请输入供应商显示名称')
+      return
+    }
+    if (!providerForm.baseUrl.trim()) {
+      showToast('请输入 API 地址 (Base URL)')
       return
     }
 
-    setTestStates(prev => ({ ...prev, [task]: { status: 'testing', message: '测试中…' } }))
-    try {
-      const res = await api.testSettings({ task, provider, api_key, base_url, model, headers })
-      if (res.ok) {
-        setTestStates(prev => ({ ...prev, [task]: { status: 'success', message: '连接成功 ✓' } }))
-      } else {
-        setTestStates(prev => ({ ...prev, [task]: { status: 'error', message: res.error || '测试失败' } }))
-      }
-    } catch (e) {
-      setTestStates(prev => ({ ...prev, [task]: { status: 'error', message: (e as Error).message } }))
+    let updated: ModelProvider[] = []
+    if (editingProviderId === 'new') {
+      const newP = { ...providerForm, id: providerForm.id.trim() || `custom-${Date.now().toString().slice(-4)}` }
+      if (providers.length === 0) newP.active = true
+      updated = [...providers, newP]
+    } else {
+      updated = providers.map(p => (p.id === editingProviderId ? { ...providerForm } : p))
     }
+
+    setProviders(updated)
+    setEditingProviderId(null)
+    persistProvidersAndSave(updated, adminPassword)
+    showToast('模型供应商已保存！')
   }
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // 将供应商映射回系统底层设置并持久化保存
+  const persistProvidersAndSave = async (provList: ModelProvider[], newAdminPw: string) => {
+    const activeProv = provList.find(p => p.active) || provList[0]
+    if (!activeProv) return
+
     setSaving(true)
     try {
-      await api.saveSettings(settings as any)
-      showToast('API 配置保存成功！')
-      setShowModal(false)
+      const payload: any = {
+        ...rawSettings,
+        ADMIN_PASSWORD: newAdminPw,
+        MODEL_PROVIDERS: JSON.stringify(provList),
+
+        // 将当前激活的供应商映射到系统各模块
+        TEXT_PROVIDER_NAME: activeProv.name || activeProv.id,
+        TEXT_API_KEY: activeProv.apiKey,
+        TEXT_BASE_URL: activeProv.baseUrl,
+        TEXT_MODEL: activeProv.models.text || 'deepseek-v4-flash',
+        TEXT_HEADERS: activeProv.headers || '',
+
+        IMAGE_PROVIDER_NAME: activeProv.name || activeProv.id,
+        IMAGE_API_KEY: activeProv.apiKey,
+        IMAGE_BASE_URL: activeProv.baseUrl,
+        IMAGE_MODEL: activeProv.models.image || 'deepseek-v4-flash-vision-exp',
+        IMAGE_HEADERS: activeProv.headers || '',
+
+        AUDIO_PROVIDER_NAME: activeProv.name || activeProv.id,
+        AUDIO_API_KEY: activeProv.apiKey,
+        AUDIO_BASE_URL: activeProv.baseUrl,
+        AUDIO_MODEL: activeProv.models.audio || 'mimo-v2.5',
+        AUDIO_HEADERS: activeProv.headers || '',
+
+        MERGE_PROVIDER_NAME: activeProv.name || activeProv.id,
+        MERGE_API_KEY: activeProv.apiKey,
+        MERGE_BASE_URL: activeProv.baseUrl,
+        MERGE_MODEL: activeProv.models.merge || 'deepseek-v4-flash',
+        MERGE_HEADERS: activeProv.headers || '',
+      }
+
+      await api.saveSettings(payload)
+      setRawSettings(payload)
       loadHealth()
     } catch (e: any) {
-      showToast(e.message || '部分接口验证未通过，请检查配置')
+      showToast('保存设置失败: ' + e.message)
     } finally {
       setSaving(false)
     }
   }
 
-  const handleInputChange = (key: keyof SettingsState, val: string) => {
-    setSettings(prev => ({ ...prev, [key]: val }))
-    const task = key.split('_')[0].toLowerCase()
-    if (['text', 'image', 'audio', 'merge'].includes(task)) {
-      setTestStates(prev => ({ ...prev, [task]: { status: 'idle', message: '' } }))
+  // 测试正在编辑的供应商连通性
+  const handleTestProvider = async () => {
+    const apiKey = providerForm.apiKey || rawSettings.AUDIO_API_KEY || ''
+    if (!apiKey) {
+      setTestState({ status: 'error', message: 'API Key 不能为空' })
+      return
+    }
+
+    setTestState({ status: 'testing', message: '测试连接中…' })
+    try {
+      const res = await api.testSettings({
+        task: 'text',
+        provider: providerForm.name || providerForm.id,
+        api_key: apiKey,
+        base_url: providerForm.baseUrl,
+        model: providerForm.models.text || 'deepseek-v4-flash',
+        headers: providerForm.headers,
+      })
+      if (res.ok) {
+        setTestState({ status: 'success', message: '连接成功 ✓' })
+      } else {
+        setTestState({ status: 'error', message: res.error || '测试失败' })
+      }
+    } catch (e: any) {
+      setTestState({ status: 'error', message: e.message || '连接失败' })
     }
   }
 
@@ -298,197 +379,6 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     }
   }
 
-  const renderSection = (
-    task: TaskKey,
-    title: string,
-    defaultModelPlaceholder: string
-  ) => {
-    const pfx = task.toUpperCase()
-    const isExpanded = expandedSections[task]
-    const testState = testStates[task]
-    const currentProvider = settings[`${pfx}_PROVIDER_NAME` as keyof SettingsState]
-
-    return (
-      <div
-        key={task}
-        style={{
-          border: '1px solid var(--line)',
-          borderRadius: '10px',
-          padding: '12px',
-          background: 'var(--paper-deep)',
-          transition: 'all 0.2s ease',
-        }}
-      >
-        {/* Section Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => toggleSection(task)}>
-            <span style={{ fontFamily: 'var(--serif)', fontWeight: 'bold', fontSize: '15px', color: 'var(--ink)' }}>
-              {title}
-            </span>
-            {currentProvider && (
-              <span
-                style={{
-                  fontSize: '11px',
-                  background: 'var(--paper-card)',
-                  border: '1px solid var(--line)',
-                  padding: '1px 6px',
-                  borderRadius: '4px',
-                  color: 'var(--ink-soft)',
-                }}
-              >
-                {currentProvider}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); toggleSection(task) }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--ink-faint)',
-                cursor: 'pointer',
-                fontSize: '12px',
-                padding: '2px 4px',
-              }}
-            >
-              {isExpanded ? '收起 ▴' : '展开参数 ▾'}
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {testState.status !== 'idle' && (
-              <span
-                style={{
-                  fontSize: '11px',
-                  color: testState.status === 'success' ? 'var(--moss)' : testState.status === 'error' ? 'var(--cinnabar)' : 'var(--ochre)',
-                  fontWeight: '500',
-                  maxWidth: '180px',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-                title={testState.message}
-              >
-                {testState.message}
-              </span>
-            )}
-            <button
-              type="button"
-              className="btn small ghost"
-              style={{ padding: '2px 8px', fontSize: '11px' }}
-              onClick={() => handleTest(task)}
-              disabled={testState.status === 'testing'}
-            >
-              {testState.status === 'testing' ? '测试中…' : '测试'}
-            </button>
-          </div>
-        </div>
-
-        {/* Quick Presets Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: isExpanded ? '12px' : '0', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>快捷预设:</span>
-          {PROVIDER_PRESETS.map((preset) => {
-            const isActive = currentProvider.toLowerCase() === preset.name.toLowerCase()
-            return (
-              <button
-                key={preset.name}
-                type="button"
-                onClick={() => applyPreset(task, preset)}
-                style={{
-                  background: isActive ? 'var(--ink)' : 'var(--paper-card)',
-                  color: isActive ? '#fff' : 'var(--ink-soft)',
-                  border: '1px solid var(--line)',
-                  borderRadius: '4px',
-                  padding: '2px 7px',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {preset.label}
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Collapsible Parameters Body */}
-        {isExpanded && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px dashed var(--line)', paddingTop: '10px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <div>
-                <label style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>模型供应商 (Provider)</label>
-                <input
-                  type="text"
-                  placeholder="OpenCodeGO / siliconflow"
-                  value={settings[`${pfx}_PROVIDER_NAME` as keyof SettingsState]}
-                  onChange={e => handleInputChange(`${pfx}_PROVIDER_NAME` as keyof SettingsState, e.target.value)}
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>模型名 (Model)</label>
-                <input
-                  type="text"
-                  placeholder={defaultModelPlaceholder}
-                  value={settings[`${pfx}_MODEL` as keyof SettingsState]}
-                  onChange={e => handleInputChange(`${pfx}_MODEL` as keyof SettingsState, e.target.value)}
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>API Base URL (端点)</label>
-              <input
-                type="text"
-                placeholder="https://opencode.ai/zen/go/v1"
-                value={settings[`${pfx}_BASE_URL` as keyof SettingsState]}
-                onChange={e => handleInputChange(`${pfx}_BASE_URL` as keyof SettingsState, e.target.value)}
-                style={inputStyle}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>API Key (密钥)</label>
-              <input
-                type="password"
-                placeholder="sk-..."
-                value={settings[`${pfx}_API_KEY` as keyof SettingsState]}
-                onChange={e => handleInputChange(`${pfx}_API_KEY` as keyof SettingsState, e.target.value)}
-                style={inputStyle}
-              />
-            </div>
-
-            {/* Custom Headers Textarea */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>
-                  自定义请求头 (Headers)
-                </label>
-                <span style={{ fontSize: '10px', color: 'var(--ink-faint)' }}>
-                  支持每行 Key: Value 或 JSON 对象
-                </span>
-              </div>
-              <textarea
-                rows={3}
-                placeholder={"x-opencode-session: luanxie-session-affinity-01\nx-opencode-client: luanxie"}
-                value={settings[`${pfx}_HEADERS` as keyof SettingsState]}
-                onChange={e => handleInputChange(`${pfx}_HEADERS` as keyof SettingsState, e.target.value)}
-                style={{
-                  ...inputStyle,
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                  fontSize: '12px',
-                  lineHeight: '1.4',
-                  resize: 'vertical',
-                }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div className="fade-in">
       <div className="section-title">设置</div>
@@ -502,9 +392,9 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
               disabled={loadingSettings}
               className="btn small"
               style={{
-                background: health.api_key_set ? 'var(--moss)' : 'var(--cinnabar)',
+                background: health.api_key_set ? '#10b981' : '#ef4444',
                 color: '#fff',
-                borderColor: health.api_key_set ? 'var(--moss)' : 'var(--cinnabar)',
+                borderColor: health.api_key_set ? '#10b981' : '#ef4444',
                 padding: '4px 10px',
                 fontSize: '11px',
                 borderRadius: '6px',
@@ -512,11 +402,11 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                 transition: 'opacity 0.15s',
               }}
-              onMouseOver={(e) => (e.currentTarget.style.opacity = '0.85')}
-              onMouseOut={(e) => (e.currentTarget.style.opacity = '1')}
+              onMouseOver={e => (e.currentTarget.style.opacity = '0.88')}
+              onMouseOut={e => (e.currentTarget.style.opacity = '1')}
             >
               {loadingSettings ? '读取中…' : health.api_key_set ? '已配置 ✓' : '未配置 ✗'}
             </button>
@@ -573,7 +463,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
       <div style={{ padding: '4px 0 12px' }}>
         <button
           className="btn danger"
-          style={{ width: '100%', padding: '10px', borderRadius: '10px' }}
+          style={{ width: '100%', padding: '10px', borderRadius: '8px' }}
           onClick={async () => {
             if (!confirm('确定要退出登录吗？')) return
             try {
@@ -593,92 +483,408 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
         系统将在后台自动合并、重构、维护关联双链
       </div>
 
-      {/* Modal Dialog */}
+      {/* DeepSeek Harness 风格模型设置弹窗 */}
       {showModal && (
         <div
           className="modal-overlay"
           style={{
             position: 'fixed',
             top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(43, 38, 32, 0.4)',
-            backdropFilter: 'blur(5px)',
+            background: 'rgba(15, 23, 42, 0.45)',
+            backdropFilter: 'blur(8px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 100,
-            padding: '20px'
+            padding: '20px',
           }}
         >
           <div
             className="modal-content"
             style={{
-              background: 'var(--paper-card)',
-              border: '1px solid var(--line)',
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
               borderRadius: '16px',
               width: '100%',
               maxWidth: '560px',
               maxHeight: '88vh',
               overflowY: 'auto',
-              padding: '22px',
-              boxShadow: '0 12px 40px rgba(43,38,32,0.22)',
+              padding: '24px',
+              boxShadow: '0 20px 45px rgba(0, 0, 0, 0.12)',
               display: 'flex',
               flexDirection: 'column',
               gap: '16px',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '10px' }}>
-              <h3 style={{ fontFamily: 'var(--serif)', fontSize: '20px', fontWeight: 900 }}>配置 AI 模型供应商与 API</h3>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '19px', fontWeight: 700, color: '#0f172a', margin: 0 }}>模型</h3>
+                <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>
+                  填入各提供方的 API 密钥即可使用其模型。
+                </p>
+              </div>
               <button
                 onClick={() => setShowModal(false)}
-                style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: 'var(--ink-faint)' }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '22px',
+                  cursor: 'pointer',
+                  color: '#94a3b8',
+                  padding: '2px 6px',
+                }}
               >
                 ×
               </button>
             </div>
 
-            <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* 第一行：管理员密码 */}
+            <div
+              style={{
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '12px 14px',
+                background: '#f8fafc',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontWeight: 600, fontSize: '13px', color: '#1e293b' }}>管理员密码</span>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>留空或保持 ••• 即不修改</span>
+              </div>
+              <input
+                type="password"
+                placeholder="留空(或保持 •••)=不修改"
+                value={adminPassword}
+                onChange={e => {
+                  setAdminPassword(e.target.value)
+                  persistProvidersAndSave(providers, e.target.value)
+                }}
+                style={modernInputStyle}
+              />
+            </div>
 
-                {/* 0. 管理员密码 */}
-                <div style={{ border: '1px solid var(--line)', borderRadius: '10px', padding: '12px', background: 'var(--paper-deep)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ fontFamily: 'var(--serif)', fontWeight: 'bold', fontSize: '15px', color: 'var(--ink)' }}>管理员密码 (Admin)</span>
-                    <span style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>留空或保持 ••• 即不修改</span>
+            {/* 模型列表 (模型A、模型B...) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {providers.map(p => {
+                const isKeySet = p.apiKey && p.apiKey !== '••••••••' ? true : (p.active && rawSettings.AUDIO_API_KEY ? true : false)
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      border: p.active ? '1.5px solid #cbd5e1' : '1px solid #e2e8f0',
+                      borderRadius: '10px',
+                      padding: '12px 16px',
+                      background: '#ffffff',
+                      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)',
+                    }}
+                  >
+                    {/* 左侧：文字与状态点 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>
+                        {p.name || p.id}
+                      </span>
+                      {/* 状态小圆点: 绿色代表已配置密钥/已启用，红色代表未配置 */}
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          background: isKeySet ? '#10b981' : '#ef4444',
+                        }}
+                      />
+                      {p.active && (
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            color: '#2563eb',
+                            background: '#eff6ff',
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            fontWeight: 500,
+                          }}
+                        >
+                          当前生效
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 右侧：按钮组 (编辑、删除) */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {!p.active && (
+                        <button
+                          type="button"
+                          onClick={() => handleActivateProvider(p.id)}
+                          style={harnessSubtleButtonStyle}
+                          title="设为当前生效提供商"
+                        >
+                          使用
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleEditProvider(p)}
+                        style={harnessSubtleButtonStyle}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProvider(p.id)}
+                        style={harnessDangerButtonStyle}
+                      >
+                        删除
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <label style={{ fontSize: '11px', color: 'var(--ink-soft)' }}>新密码(至少 6 位,勿用 admin)</label>
-                    <input
-                      type="password"
-                      placeholder="留空(或保持 •••)=不修改"
-                      value={settings.ADMIN_PASSWORD}
-                      onChange={e => handleInputChange('ADMIN_PASSWORD', e.target.value)}
-                      style={inputStyle}
-                    />
-                  </div>
+                )
+              })}
+            </div>
+
+            {/* 模型A、B下面一行是靠右的按钮：增加模型供应商 */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-4px' }}>
+              <button
+                type="button"
+                onClick={handleAddNewProvider}
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  padding: '6px 14px',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  color: '#1e293b',
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseOver={e => (e.currentTarget.style.background = '#f8fafc')}
+                onMouseOut={e => (e.currentTarget.style.background = '#ffffff')}
+              >
+                + 增加模型供应商
+              </button>
+            </div>
+
+            {/* 点击后展开全宽页面（自定义提供方 / 编辑提供方） */}
+            {editingProviderId !== null && (
+              <div
+                style={{
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '18px',
+                  background: '#f8fafc',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '14px',
+                  animation: 'fadeIn 0.2s ease',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+                  <h4 style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a', margin: 0 }}>
+                    {editingProviderId === 'new' ? '自定义提供方' : `编辑提供方 · ${providerForm.name || providerForm.id}`}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setEditingProviderId(null)}
+                    style={{ background: 'none', border: 'none', fontSize: '18px', color: '#94a3b8', cursor: 'pointer' }}
+                  >
+                    ×
+                  </button>
                 </div>
 
-                {/* 1. 文字分类 */}
-                {renderSection('text', '文字分类 (Text)', 'deepseek-v4-flash')}
+                <form onSubmit={handleSaveProviderForm} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* Provider ID */}
+                  <div>
+                    <label style={formLabelStyle}>Provider ID</label>
+                    <input
+                      type="text"
+                      placeholder="acme-gateway"
+                      value={providerForm.id}
+                      onChange={e => setProviderForm(prev => ({ ...prev, id: e.target.value }))}
+                      style={modernInputStyle}
+                    />
+                    <p style={formHelpTextStyle}>
+                      以小写字母开头的标识，在请求中唯一标识该提供方，并用于派生凭据名。
+                    </p>
+                  </div>
 
-                {/* 2. 图像识别 */}
-                {renderSection('image', '图像识别 (Image)', 'deepseek-v4-flash-vision-exp')}
+                  {/* 显示名称 */}
+                  <div>
+                    <label style={formLabelStyle}>显示名称</label>
+                    <input
+                      type="text"
+                      placeholder="如 OpenCode Go、DeepSeek 官方"
+                      value={providerForm.name}
+                      onChange={e => setProviderForm(prev => ({ ...prev, name: e.target.value }))}
+                      style={modernInputStyle}
+                    />
+                  </div>
 
-                {/* 3. 语音转写 */}
-                {renderSection('audio', '语音转写 (Audio)', 'mimo-v2.5')}
+                  {/* API 地址 */}
+                  <div>
+                    <label style={formLabelStyle}>API 地址 (Base URL)</label>
+                    <input
+                      type="text"
+                      placeholder="https://gateway.example/v1"
+                      value={providerForm.baseUrl}
+                      onChange={e => setProviderForm(prev => ({ ...prev, baseUrl: e.target.value }))}
+                      style={modernInputStyle}
+                    />
+                  </div>
 
-                {/* 4. 笔记合并 */}
-                {renderSection('merge', '笔记合并 (Merge)', 'deepseek-v4-flash')}
+                  {/* API 协议 */}
+                  <div>
+                    <label style={formLabelStyle}>API 协议</label>
+                    <select
+                      value={providerForm.protocol}
+                      onChange={e => setProviderForm(prev => ({ ...prev, protocol: e.target.value as any }))}
+                      style={modernInputStyle}
+                    >
+                      <option value="openai-completions">openai-completions</option>
+                      <option value="anthropic-messages">anthropic-messages</option>
+                    </select>
+                  </div>
 
+                  {/* API 密钥 */}
+                  <div>
+                    <label style={formLabelStyle}>API 密钥</label>
+                    <input
+                      type="password"
+                      placeholder="输入 API 密钥"
+                      value={providerForm.apiKey}
+                      onChange={e => setProviderForm(prev => ({ ...prev, apiKey: e.target.value }))}
+                      style={modernInputStyle}
+                    />
+                  </div>
+
+                  {/* 自定义请求头 (每家不一样的选项以文本框体现) */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={formLabelStyle}>自定义请求头 (Headers)</label>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>支持每行 Key: Value 或 JSON 格式</span>
+                    </div>
+                    <textarea
+                      rows={3}
+                      placeholder={"x-opencode-session: luanxie-session-affinity-01\nx-opencode-client: luanxie"}
+                      value={providerForm.headers}
+                      onChange={e => setProviderForm(prev => ({ ...prev, headers: e.target.value }))}
+                      style={{
+                        ...modernInputStyle,
+                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                        fontSize: '12px',
+                        lineHeight: '1.45',
+                        resize: 'vertical',
+                      }}
+                    />
+                    <p style={formHelpTextStyle}>
+                      用于满足每家服务商特殊的请求头认证或路由机制（如 OpenCode Go 需提供 x-opencode-session）。
+                    </p>
+                  </div>
+
+                  {/* 各功能模型目录配置 */}
+                  <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '10px' }}>
+                    <label style={{ ...formLabelStyle, marginBottom: '8px' }}>模型目录分配 (可直接指定任务模型)</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <span style={{ fontSize: '11px', color: '#64748b' }}>文字分类 (Text)</span>
+                        <input
+                          type="text"
+                          placeholder="deepseek-v4-flash"
+                          value={providerForm.models.text}
+                          onChange={e => setProviderForm(prev => ({ ...prev, models: { ...prev.models, text: e.target.value } }))}
+                          style={modernInputStyle}
+                        />
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '11px', color: '#64748b' }}>图像识别 (Image)</span>
+                        <input
+                          type="text"
+                          placeholder="deepseek-v4-flash-vision-exp"
+                          value={providerForm.models.image}
+                          onChange={e => setProviderForm(prev => ({ ...prev, models: { ...prev.models, image: e.target.value } }))}
+                          style={modernInputStyle}
+                        />
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '11px', color: '#64748b' }}>语音转写 (Audio)</span>
+                        <input
+                          type="text"
+                          placeholder="mimo-v2.5"
+                          value={providerForm.models.audio}
+                          onChange={e => setProviderForm(prev => ({ ...prev, models: { ...prev.models, audio: e.target.value } }))}
+                          style={modernInputStyle}
+                        />
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '11px', color: '#64748b' }}>笔记合并 (Merge)</span>
+                        <input
+                          type="text"
+                          placeholder="deepseek-v4-flash"
+                          value={providerForm.models.merge}
+                          onChange={e => setProviderForm(prev => ({ ...prev, models: { ...prev.models, merge: e.target.value } }))}
+                          style={modernInputStyle}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 展开面板底栏动作 */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', borderTop: '1px solid #e2e8f0', paddingTop: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={handleTestProvider}
+                        disabled={testState.status === 'testing'}
+                        style={harnessSubtleButtonStyle}
+                      >
+                        {testState.status === 'testing' ? '测试中…' : '测试连接'}
+                      </button>
+                      {testState.status !== 'idle' && (
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            color: testState.status === 'success' ? '#10b981' : testState.status === 'error' ? '#ef4444' : '#f59e0b',
+                            fontWeight: 500,
+                          }}
+                        >
+                          {testState.message}
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setEditingProviderId(null)}
+                        style={harnessSubtleButtonStyle}
+                      >
+                        收起
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        style={{
+                          background: '#2563eb',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '5px 14px',
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {saving ? '保存中…' : '保存提供方'}
+                      </button>
+                    </div>
+                  </div>
+                </form>
               </div>
-
-              {/* Action Buttons */}
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', borderTop: '1px solid var(--line)', paddingTop: '14px' }}>
-                <button type="button" className="btn ghost" disabled={saving} onClick={() => setShowModal(false)}>取消</button>
-                <button type="submit" className="btn primary" disabled={saving}>
-                  {saving ? '保存中…' : '保存配置'}
-                </button>
-              </div>
-            </form>
+            )}
           </div>
         </div>
       )}
@@ -686,14 +892,51 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
   )
 }
 
-const inputStyle: React.CSSProperties = {
+const formLabelStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: '12px',
+  fontWeight: 600,
+  color: '#334155',
+  marginBottom: '4px',
+}
+
+const formHelpTextStyle: React.CSSProperties = {
+  fontSize: '11px',
+  color: '#94a3b8',
+  margin: '3px 0 0 0',
+  lineHeight: '1.4',
+}
+
+const modernInputStyle: React.CSSProperties = {
   width: '100%',
-  marginTop: '3px',
   fontSize: '13px',
-  padding: '6px 8px',
-  border: '1px solid var(--line)',
-  borderRadius: '6px',
-  background: 'var(--paper-card)',
-  color: 'var(--ink)',
+  padding: '8px 10px',
+  border: '1px solid #d1d5db',
+  borderRadius: '8px',
+  background: '#ffffff',
+  color: '#0f172a',
   outline: 'none',
+  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.03)',
+  transition: 'border-color 0.15s ease',
+}
+
+const harnessSubtleButtonStyle: React.CSSProperties = {
+  background: '#ffffff',
+  border: '1px solid #d1d5db',
+  borderRadius: '6px',
+  padding: '4px 12px',
+  fontSize: '12px',
+  color: '#1e293b',
+  cursor: 'pointer',
+  transition: 'all 0.12s ease',
+}
+
+const harnessDangerButtonStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  padding: '4px 10px',
+  fontSize: '12px',
+  color: '#ef4444',
+  cursor: 'pointer',
+  transition: 'all 0.12s ease',
 }

@@ -46,6 +46,8 @@ class SettingsUpdate(BaseModel):
     MERGE_MODEL: str = Field("", max_length=_MODEL_MAX)
     MERGE_HEADERS: str = Field("", max_length=_HEADER_MAX)
 
+    MODEL_PROVIDERS: str = Field("", max_length=50000)
+
     ADMIN_PASSWORD: str = Field("", max_length=200)
 
     AUTO_MERGE_EXISTING_CONFIDENCE: str = "medium"
@@ -79,12 +81,9 @@ def _validate_base_url(base_url: str) -> str | None:
     if not hostname:
         return "无效的主机名"
 
-    # 阻断云元数据服务专用段(AWS/GCP/Aliyun 等均为 169.254.169.254)与 IPv6 链路本地
-    # 解析 DNS 看是否指向此类敏感地址
     try:
         addr_infos = socket.getaddrinfo(hostname, None)
     except socket.gaierror:
-        # DNS 暂解析失败(可能是仅限内网的名字服务),暂不阻断,交由后续请求报错
         addr_infos = []
 
     for info in addr_infos:
@@ -93,7 +92,6 @@ def _validate_base_url(base_url: str) -> str | None:
             ip = ipaddress.ip_address(ip_str)
             if ip.is_link_local:
                 return f"已阻断针对链路本地/元数据地址的请求: {hostname} ({ip_str})"
-            # 明确阻断 169.254.0.0/16
             if isinstance(ip, ipaddress.IPv4Address) and ip in ipaddress.IPv4Network("169.254.0.0/16"):
                 return f"已阻断针对元数据地址的请求: {hostname} ({ip_str})"
         except ValueError:
@@ -132,19 +130,18 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
                         model=model,
                         messages=[{"role": "user", "content": "ping"}],
                         max_tokens=5,
-                        timeout=10.0
+                        timeout=25.0
                     )
                 else:
                     return client.messages.create(
                         model=model,
                         messages=[{"role": "user", "content": "ping"}],
                         max_tokens=5,
-                        timeout=10.0
+                        timeout=25.0
                     )
             await asyncio.to_thread(run_chat)
 
         elif task == "image":
-            # 视觉模型专用测试分支：附带标准 Base64 图片数据
             def run_vision():
                 if client_type == "openai":
                     vision_content = [
@@ -155,7 +152,7 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
                         model=model,
                         messages=[{"role": "user", "content": vision_content}],
                         max_tokens=5,
-                        timeout=15.0
+                        timeout=30.0
                     )
                 else:
                     anthropic_content = [
@@ -173,12 +170,11 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
                         model=model,
                         messages=[{"role": "user", "content": anthropic_content}],
                         max_tokens=5,
-                        timeout=15.0
+                        timeout=30.0
                     )
             await asyncio.to_thread(run_vision)
 
         elif task == "audio":
-            # 生成 1 秒无声音频 WAV 数据 (8000Hz, 8-bit, Mono PCM)
             sample_rate = 8000
             data_size = 8000
             file_size = 44 + data_size
@@ -217,7 +213,7 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
                         headers = base_headers
                         with open(tmp_path, "rb") as f:
                             files = {"file": ("test.wav", f.read(), "audio/wav")}
-                        res = httpx.post(url, headers=headers, files=files, data={"model": model}, timeout=15.0)
+                        res = httpx.post(url, headers=headers, files=files, data={"model": model}, timeout=30.0)
                         res.raise_for_status()
                     else:
                         url = f"{base_url.rstrip('/')}/chat/completions"
@@ -227,15 +223,15 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
                             "messages": [{
                                 "role": "user",
                                 "content": [
-                                    {"type": "text", "text": "transcribe"},
+                                    {"type": "text", "text": "ping"},
                                     {"type": "input_audio", "input_audio": {"data": audio_base64, "format": "wav"}}
                                 ]
                             }],
-                            "max_tokens": 10
+                            "max_tokens": 5
                         }
                         headers = dict(base_headers)
                         headers["Content-Type"] = "application/json"
-                        res = httpx.post(url, headers=headers, json=payload, timeout=15.0)
+                        res = httpx.post(url, headers=headers, json=payload, timeout=40.0)
                         res.raise_for_status()
 
                 await asyncio.to_thread(run_audio)
@@ -266,6 +262,7 @@ def get_settings():
         "IMAGE_PROVIDER_NAME", "IMAGE_API_KEY", "IMAGE_BASE_URL", "IMAGE_MODEL", "IMAGE_HEADERS",
         "AUDIO_PROVIDER_NAME", "AUDIO_API_KEY", "AUDIO_BASE_URL", "AUDIO_MODEL", "AUDIO_HEADERS",
         "MERGE_PROVIDER_NAME", "MERGE_API_KEY", "MERGE_BASE_URL", "MERGE_MODEL", "MERGE_HEADERS",
+        "MODEL_PROVIDERS",
     ]
     result = {}
     for k in keys:

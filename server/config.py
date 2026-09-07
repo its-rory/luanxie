@@ -53,6 +53,8 @@ _STATIC_DEFAULTS = {
     "MERGE_MODEL": "claude-opus-4-8",
     "MERGE_HEADERS": "",
 
+    "MODEL_PROVIDERS": "",
+
     # 部署在反向代理后才生效的安全开关(见 README)
     "SESSION_COOKIE_SECURE": "auto",   # auto / always / never
     "TRUSTED_PROXIES": "",              # 逗号分隔的可信代理 IP,才会信任 X-Forwarded-For
@@ -152,7 +154,7 @@ def __getattr__(name: str):
         is_known = (
             target_name in _STATIC_DEFAULTS or
             target_name in _FALLBACK_MAPS or
-            any(target_name.startswith(pfx) for pfx in ("LLM_", "TEXT_", "IMAGE_", "AUDIO_", "MERGE_", "AUTO_")) or
+            any(target_name.startswith(pfx) for pfx in ("LLM_", "TEXT_", "IMAGE_", "AUDIO_", "MERGE_", "AUTO_", "MODEL_")) or
             target_name in ("ADMIN_PASSWORD", "HOST", "PORT", "DB_PATH", "DATA_DIR", "MEDIA_DIR", "WEB_DIST", "PROJECT_ROOT")
         )
         if not is_known:
