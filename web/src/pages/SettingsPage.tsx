@@ -856,13 +856,13 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                 <span style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>管理员密码</span>
                 <span style={{ fontSize: '11px', color: '#94a3b8' }}>保护接口配置与核心设置</span>
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <input
                   type="password"
                   placeholder="留空保持不变 (至少 6 位)"
                   value={adminPassword}
                   onChange={e => setAdminPassword(e.target.value)}
-                  style={modernInputStyle}
+                  style={{ ...modernInputStyle, flex: 1, minWidth: 0 }}
                 />
                 <button
                   type="button"
@@ -1551,6 +1551,8 @@ const roundedBorderButtonStyle: React.CSSProperties = {
   boxShadow: '0 1px 2px rgba(0, 0, 0, 0.03)',
   transition: 'all 0.12s ease',
   lineHeight: 1,
+  whiteSpace: 'nowrap',
+  flexShrink: 0,
 }
 
 const closeButtonStyle: React.CSSProperties = {

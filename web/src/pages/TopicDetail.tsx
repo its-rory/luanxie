@@ -89,6 +89,7 @@ export default function TopicDetail({ id, back, openTopic, openByTitle, showToas
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [editCapTitle, setEditCapTitle] = useState('')
   const [activeMenuCapId, setActiveMenuCapId] = useState<string | null>(null)
+  const [showTopicMenu, setShowTopicMenu] = useState(false)
 
   // Auto-scroll to target sub-card when navigated from Inbox
   const hasScrolledTargetRef = useRef<string | null>(null)
@@ -130,12 +131,15 @@ export default function TopicDetail({ id, back, openTopic, openByTitle, showToas
   const [merging, setMerging] = useState(false)
 
   useEffect(() => {
-    const handleClickOutside = () => setActiveMenuCapId(null)
-    if (activeMenuCapId) {
+    const handleClickOutside = () => {
+      setActiveMenuCapId(null)
+      setShowTopicMenu(false)
+    }
+    if (activeMenuCapId || showTopicMenu) {
       document.addEventListener('click', handleClickOutside)
       return () => document.removeEventListener('click', handleClickOutside)
     }
-  }, [activeMenuCapId])
+  }, [activeMenuCapId, showTopicMenu])
 
   const load = useCallback((active = { current: true }) => {
     api.topic(id).then(res => { if (active.current) setTopic(res); }).catch(() => {})
@@ -498,29 +502,88 @@ export default function TopicDetail({ id, back, openTopic, openByTitle, showToas
       <div className="detail-head">
         <button className="back" onClick={back}>← 知识库</button>
         {isEditing ? (
-          <input
-            type="text"
-            value={editTitle}
-            onChange={(e) => setEditTitle(e.target.value)}
-            style={{
-              background: 'var(--paper-deep)',
-              color: 'var(--ink)',
-              border: '1px solid var(--line)',
-              borderRadius: '8px',
-              padding: '6px 12px',
-              fontSize: '20px',
-              fontFamily: 'var(--serif)',
-              fontWeight: 'bold',
-              width: '100%',
-              marginTop: '8px',
-              marginBottom: '8px'
-            }}
-            placeholder="输入主题标题..."
-          />
+          <div style={{ marginTop: '8px', marginBottom: '8px' }}>
+            <input
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              style={{
+                background: 'var(--paper-deep)',
+                color: 'var(--ink)',
+                border: '1px solid var(--line)',
+                borderRadius: '8px',
+                padding: '6px 12px',
+                fontSize: '20px',
+                fontFamily: 'var(--serif)',
+                fontWeight: 'bold',
+                width: '100%',
+                marginBottom: '8px'
+              }}
+              placeholder="输入主题标题..."
+            />
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className="btn small primary" onClick={handleSave} disabled={saving}>
+                {saving ? '保存中…' : '保存'}
+              </button>
+              <button className="btn small ghost" onClick={handleCancel} disabled={saving}>
+                取消
+              </button>
+            </div>
+          </div>
         ) : (
-          <h2>{topic.title}</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', position: 'relative' }}>
+            <h2 style={{ margin: 0, flex: 1, wordBreak: 'break-word' }}>{topic.title}</h2>
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <button
+                className="card-menu-trigger"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowTopicMenu(!showTopicMenu)
+                }}
+                title="主题操作"
+                aria-label="主题操作"
+              >
+                ···
+              </button>
+              {showTopicMenu && (
+                <div className="card-menu-popover" onClick={(e) => e.stopPropagation()} style={{ width: '150px' }}>
+                  <button
+                    className="card-menu-item"
+                    onClick={() => {
+                      setShowTopicMenu(false)
+                      handleOpenMerge()
+                    }}
+                  >
+                    <span className="menu-icon">🔀</span>
+                    <span>合并主题</span>
+                  </button>
+                  <button
+                    className="card-menu-item"
+                    onClick={() => {
+                      setShowTopicMenu(false)
+                      handleStartEdit()
+                    }}
+                  >
+                    <span className="menu-icon">✏️</span>
+                    <span>编辑主题标题</span>
+                  </button>
+                  <div className="card-menu-divider" />
+                  <button
+                    className="card-menu-item danger"
+                    onClick={() => {
+                      setShowTopicMenu(false)
+                      handleDelete()
+                    }}
+                  >
+                    <span className="menu-icon">🗑️</span>
+                    <span>删除此主题</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         )}
-        <div className="v">子卡片共 {captures.length} 个 · {new Date(topic.updated_at).toLocaleDateString('zh-CN')}</div>
+        <div className="v" style={{ marginTop: '6px' }}>子卡片共 {captures.length} 个 · {new Date(topic.updated_at).toLocaleDateString('zh-CN')}</div>
         <div className="tags" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
           {isEditingTags ? (
             <>
@@ -972,7 +1035,6 @@ export default function TopicDetail({ id, back, openTopic, openByTitle, showToas
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', borderTop: '1px solid var(--line)', paddingTop: '8px', fontSize: '11px', color: 'var(--ink-faint)' }}>
                   <span>生成时间: {timeStr}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {cap.version !== undefined && <span>当前版本: v{cap.version}</span>}
                     <button 
                       className="action-btn" 
                       onClick={() => toggleCapVersions(cap.id)}
@@ -1029,52 +1091,30 @@ export default function TopicDetail({ id, back, openTopic, openByTitle, showToas
         )}
       </div>
 
-      <div className="versions" style={{ marginTop: '24px', marginBottom: '36px', paddingTop: '16px', borderTop: '1px solid var(--line)', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-        {isEditing ? (
-          <>
-            <button className="btn small primary" onClick={handleSave} disabled={saving}>
-              {saving ? '保存中…' : '保存'}
-            </button>
-            <button className="btn small ghost" onClick={handleCancel} disabled={saving}>
-              取消
-            </button>
-          </>
-        ) : (
-          <>
-            {topic.body_md && topic.body_md.trim() && (
-              <button className="btn small ghost" onClick={() => setShowVersions(!showVersions)}>
-                {showVersions ? '收起版本历史' : `主题历史(${versions.length})`}
-              </button>
-            )}
-            <button className="btn small" onClick={handleOpenMerge}>
-              合并主题
-            </button>
-            <button className="btn small" onClick={handleStartEdit}>
-              编辑主题标题
-            </button>
-            <button className="btn small danger" onClick={handleDelete}>
-              删除此主题
-            </button>
-          </>
-        )}
-        {showVersions && versions.map((v) => (
-          <div key={v.id}>
-            <div className="version-item">
-              <span className="vnum">v{v.version}</span>
-              <span>{new Date(v.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-              {v.capture_id && <span style={{ color: 'var(--ink-faint)', fontSize: 11 }}>cap-{v.capture_id.slice(0, 6)}</span>}
-              <span className="spacer" />
-              <button className="btn small ghost" onClick={() => setDiffFor(diffFor === v.version ? null : v.version)}>
-                {diffFor === v.version ? '收起' : '对比'}
-              </button>
-              <button className="btn small" onClick={() => rollback(v.version)}>回滚</button>
+      {topic.body_md && topic.body_md.trim() && (
+        <div className="versions" style={{ marginTop: '24px', marginBottom: '36px', paddingTop: '16px', borderTop: '1px solid var(--line)', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="btn small ghost" onClick={() => setShowVersions(!showVersions)}>
+            {showVersions ? '收起版本历史' : `主题历史(${versions.length})`}
+          </button>
+          {showVersions && versions.map((v) => (
+            <div key={v.id} style={{ width: '100%' }}>
+              <div className="version-item">
+                <span className="vnum">v{v.version}</span>
+                <span>{new Date(v.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                {v.capture_id && <span style={{ color: 'var(--ink-faint)', fontSize: 11 }}>cap-{v.capture_id.slice(0, 6)}</span>}
+                <span className="spacer" />
+                <button className="btn small ghost" onClick={() => setDiffFor(diffFor === v.version ? null : v.version)}>
+                  {diffFor === v.version ? '收起' : '对比'}
+                </button>
+                <button className="btn small" onClick={() => rollback(v.version)}>回滚</button>
+              </div>
+              {diffFor === v.version && diffTarget && (
+                <DiffView oldText={diffTarget.body_md} newText={topic.body_md || ''} />
+              )}
             </div>
-            {diffFor === v.version && diffTarget && (
-              <DiffView oldText={diffTarget.body_md} newText={topic.body_md || ''} />
-            )}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {lightboxUrl && (
         <div
