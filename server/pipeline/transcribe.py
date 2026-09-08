@@ -75,10 +75,13 @@ async def _transcribe_via_api(audio_path: str) -> str:
     import base64
 
     # 1. 解析自定义 Headers 与专属认证
+    from .._net import normalize_base_url
+    norm_base = normalize_base_url(config.AUDIO_BASE_URL, config.AUDIO_PROVIDER_NAME)
+
     custom_headers_raw = getattr(config, "AUDIO_HEADERS", "")
     headers = config.resolve_headers(
         custom_headers_raw,
-        base_url=config.AUDIO_BASE_URL,
+        base_url=norm_base,
         provider=config.AUDIO_PROVIDER_NAME
     )
     headers["Authorization"] = f"Bearer {config.AUDIO_API_KEY}"
@@ -92,79 +95,92 @@ async def _transcribe_via_api(audio_path: str) -> str:
         # 多模态对话接口 (/chat/completions)
         # 转码为通用 16kHz PCM WAV 格式
         target_path = await asyncio.to_thread(_ensure_wav_format, audio_path)
+        try:
+            url = f"{norm_base}/chat/completions"
+            chat_headers = dict(headers)
+            chat_headers["Content-Type"] = "application/json"
 
-        url = f"{config.AUDIO_BASE_URL.rstrip('/')}/chat/completions"
-        chat_headers = dict(headers)
-        chat_headers["Content-Type"] = "application/json"
+            with open(target_path, "rb") as f:
+                audio_base64 = base64.b64encode(f.read()).decode("utf-8")
 
-        with open(target_path, "rb") as f:
-            audio_base64 = base64.b64encode(f.read()).decode("utf-8")
+            prompt_text = "请将这段音频精准逐字转写为文字，只输出转写内容，不要包含任何多余的解释、翻译、前言后语或时间戳。"
 
-        prompt_text = "请将这段音频精准逐字转写为文字，只输出转写内容，不要包含任何多余的解释、翻译、前言后语或时间戳。"
+            # 优先采用 OpenAI 多模态音频 input_audio 规范
+            payload_input_audio = {
+                "model": config.AUDIO_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt_text},
+                            {"type": "input_audio", "input_audio": {"data": audio_base64, "format": "wav"}}
+                        ]
+                    }
+                ],
+                "max_tokens": 4096
+            }
 
-        # 优先采用 OpenAI 多模态音频 input_audio 规范
-        payload_input_audio = {
-            "model": config.AUDIO_MODEL,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt_text},
-                        {"type": "input_audio", "input_audio": {"data": audio_base64, "format": "wav"}}
-                    ]
-                }
-            ],
-            "max_tokens": 4096
-        }
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, headers=chat_headers, json=payload_input_audio, timeout=180.0)
+                if resp.status_code == 400 and ("input_audio" in resp.text or "format" in resp.text):
+                    # 上游若仅支持旧版 audio_url 规范，自动降级重试
+                    payload_audio_url = {
+                        "model": config.AUDIO_MODEL,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "audio_url", "audio_url": {"url": f"data:audio/wav;base64,{audio_base64}"}},
+                                    {"type": "text", "text": prompt_text}
+                                ]
+                            }
+                        ],
+                        "max_tokens": 4096
+                    }
+                    resp = await client.post(url, headers=chat_headers, json=payload_audio_url, timeout=180.0)
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(url, headers=chat_headers, json=payload_input_audio, timeout=180.0)
-            if resp.status_code == 400 and ("input_audio" in resp.text or "format" in resp.text):
-                # 上游若仅支持旧版 audio_url 规范，自动降级重试
-                payload_audio_url = {
-                    "model": config.AUDIO_MODEL,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "audio_url", "audio_url": {"url": f"data:audio/wav;base64,{audio_base64}"}},
-                                {"type": "text", "text": prompt_text}
-                            ]
-                        }
-                    ],
-                    "max_tokens": 4096
-                }
-                resp = await client.post(url, headers=chat_headers, json=payload_audio_url, timeout=180.0)
-
-            resp.raise_for_status()
-            result = resp.json()
-            choice = result.get("choices", [{}])[0]
-            msg = choice.get("message", {})
-            content = (msg.get("content") or "").strip()
-            if not content:
-                # 思考模型（如 mimo-v2.5 等）输出可能位于 reasoning_content 中
-                content = (msg.get("reasoning_content") or "").strip()
-            return content
+                resp.raise_for_status()
+                result = resp.json()
+                choice = result.get("choices", [{}])[0]
+                msg = choice.get("message", {})
+                content = (msg.get("content") or "").strip()
+                if not content:
+                    # 思考模型（如 mimo-v2.5 等）输出可能位于 reasoning_content 中
+                    content = (msg.get("reasoning_content") or "").strip()
+                return content
+        finally:
+            if target_path != audio_path and target_path.endswith("_transcribe.wav"):
+                try:
+                    os.unlink(target_path)
+                except Exception:
+                    pass
 
     else:
         # 走标准的 /v1/audio/transcriptions 接口
         target_path = await asyncio.to_thread(_ensure_mp3_format, audio_path)
-        filename = os.path.basename(target_path)
-        url = f"{config.AUDIO_BASE_URL.rstrip('/')}/audio/transcriptions"
-        mime_type = "audio/mpeg"
+        try:
+            filename = os.path.basename(target_path)
+            url = f"{norm_base}/audio/transcriptions"
+            mime_type = "audio/mpeg"
 
-        with open(target_path, "rb") as f:
-            files = {
-                "file": (filename, f, mime_type)
-            }
-            data = {
-                "model": config.AUDIO_MODEL
-            }
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, headers=headers, files=files, data=data, timeout=300.0)
-                response.raise_for_status()
-                result = response.json()
-                return result["text"].strip()
+            with open(target_path, "rb") as f:
+                files = {
+                    "file": (filename, f, mime_type)
+                }
+                data = {
+                    "model": config.AUDIO_MODEL
+                }
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(url, headers=headers, files=files, data=data, timeout=300.0)
+                    response.raise_for_status()
+                    result = response.json()
+                    return result["text"].strip()
+        finally:
+            if target_path != audio_path and target_path.endswith("_transcribe.mp3"):
+                try:
+                    os.unlink(target_path)
+                except Exception:
+                    pass
 
 
 def _transcribe_sync(audio_path: str) -> str:

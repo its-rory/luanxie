@@ -180,15 +180,4 @@ def delete_capture_route(capture_id: str):
     cap = db.get_capture(capture_id)
     if not cap:
         raise HTTPException(404, "子卡片不存在")
-    topic_id = cap.get("topic_id")
-    db.delete_capture(capture_id)
-    topic_deleted = False
-    if topic_id:
-        remaining = db.list_captures_by_topic(topic_id)
-        if not remaining:
-            db.delete_topic(topic_id)
-            topic_deleted = True
-        else:
-            new_latest_cap = remaining[-1]
-            db.update_topic_summary(topic_id, (new_latest_cap["clean_text"] or "")[:100])
-    return {"ok": True, "topic_deleted": topic_deleted}
+    return db.delete_capture_and_cleanup_topic(capture_id)

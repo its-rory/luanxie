@@ -113,24 +113,11 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
         headers = dict(resolved_headers)
         headers["Authorization"] = f"Bearer {api_key}"
 
-        url_clean = base_url.rstrip("/")
+        from .._net import normalize_base_url
         prov_lower = provider.lower()
-        url_lower = url_clean.lower()
+        url_lower = (base_url or "").lower()
         is_anthropic = "anthropic" in prov_lower or "anthropic" in url_lower
-
-        # 智能标准化 Base URL:
-        if is_anthropic:
-            if url_clean.endswith("/v1"):
-                effective_base_url = url_clean[:-3]
-            else:
-                effective_base_url = url_clean
-        else:
-            from urllib.parse import urlparse
-            parsed_u = urlparse(url_clean)
-            if not parsed_u.path or parsed_u.path in ("", "/"):
-                effective_base_url = f"{url_clean}/v1"
-            else:
-                effective_base_url = url_clean
+        effective_base_url = normalize_base_url(base_url, "anthropic" if is_anthropic else "openai")
 
         # 1. 针对常规模型供应商，优先使用轻量级 GET /models 探针 (主流平台均秒级返回，不耗 Token，快速鉴权与探活)
         if not is_anthropic:

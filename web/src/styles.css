@@ -888,3 +888,12 @@ nav.tabs button .badge {
 /* 动效 */
 .fade-in { animation: fadeIn 0.2s ease; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- 模型分组与设置表单 ---------- */
+.model-group-card {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.model-group-card:hover {
+  border-color: #cbd5e1;
+}
+

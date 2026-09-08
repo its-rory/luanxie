@@ -29,3 +29,26 @@ def client_ip(request: Request) -> str:
         first = xff.split(",")[0].strip()
         return first or direct
     return direct
+
+
+def normalize_base_url(base_url: str | None, protocol: str = "openai") -> str:
+    """智能标准化 Base URL:
+    - 针对 Anthropic 协议: 剥离用户可能多填的 /v1 后缀,防止 SDK 内部拼出 /v1/v1/messages
+    - 针对 OpenAI 兼容协议: 若用户只填了根域名(如 https://api.openai.com),自动补齐 /v1
+    """
+    if not base_url:
+        return ""
+    url_clean = base_url.strip().rstrip("/")
+    if not url_clean:
+        return ""
+    prot_lower = (protocol or "").lower()
+    if "anthropic" in prot_lower:
+        if url_clean.endswith("/v1"):
+            return url_clean[:-3]
+        return url_clean
+    else:
+        from urllib.parse import urlparse
+        p = urlparse(url_clean)
+        if not p.path or p.path in ("", "/"):
+            return f"{url_clean}/v1"
+        return url_clean

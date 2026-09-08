@@ -63,10 +63,11 @@ def _cookie_secure(request: Request) -> bool:
 
 def _login_locked(ip: str) -> float:
     """返回剩余封锁秒数,0 表示未封锁。"""
-    until = _locks_until.get(ip, 0)
-    if until > time.time():
-        return until - time.time()
-    return 0.0
+    with _fail_lock:
+        until = _locks_until.get(ip, 0)
+        if until > time.time():
+            return until - time.time()
+        return 0.0
 
 
 def _record_fail(ip: str) -> None:

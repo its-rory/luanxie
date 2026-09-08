@@ -68,6 +68,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS topics_fts USING fts5(
 CREATE INDEX IF NOT EXISTS idx_captures_status ON captures(status);
 CREATE INDEX IF NOT EXISTS idx_captures_created ON captures(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_captures_topic ON captures(topic_id);
+CREATE INDEX IF NOT EXISTS idx_captures_topic_sort ON captures(topic_id, is_pinned DESC, sort_order ASC, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_topics_updated ON topics(updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -163,6 +164,7 @@ def get_conn() -> sqlite3.Connection:
                     pass
                 try:
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_topics_sort ON topics(sort_order ASC, updated_at DESC)")
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_captures_topic_sort ON captures(topic_id, is_pinned DESC, sort_order ASC, created_at ASC)")
                     conn.commit()
                 except sqlite3.OperationalError:
                     pass

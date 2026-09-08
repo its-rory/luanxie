@@ -1,6 +1,18 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import type { Health } from '../types'
+import ModelGroupCard from '../components/ModelGroupCard'
+
+const GROUP_DEFINITIONS: {
+  key: 'text' | 'image' | 'audio' | 'merge'
+  title: string
+  description: string
+}[] = [
+  { key: 'text', title: '文字模型 (Text)', description: '用于便签文本归档、分类整理与主题标题生成' },
+  { key: 'image', title: '图像模型 (Image)', description: '用于白板拍照、图片文字提取与视觉内容理解' },
+  { key: 'audio', title: '语音模型 (Audio)', description: '用于随手录音、音频转写为文本内容' },
+  { key: 'merge', title: '合并模型 (Merge)', description: '用于主题提炼、生成子卡片标题与智能合并' },
+]
 
 export interface ModelDetail {
   name: string
@@ -1389,233 +1401,26 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                 </div>
               )}
 
-              {/* 1. 文字模型 */}
-              <div style={groupCardStyle}>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>文字模型 (Text)</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>用于便签文本归档、分类整理与主题标题生成</div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <div>
-                    <label style={formLabelStyle}>选择模型供应商</label>
-                    <select
-                      value={modelGroups.text?.providerId || (providers[0]?.id || '')}
-                      onChange={e => {
-                        const newProvId = e.target.value
-                        const p = providers.find(item => item.id === newProvId)
-                        const nextModel = p && p.models.length > 0 ? p.models[0].name : ''
-                        setModelGroups(prev => ({
-                          ...prev,
-                          text: { providerId: newProvId, model: nextModel },
-                        }))
-                      }}
-                      style={modernInputStyle}
-                    >
-                      {providers.map(p => (
-                        <option key={p.id} value={p.id}>{p.name || p.id}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={formLabelStyle}>选用模型</label>
-                    {(() => {
-                      const curProv = providers.find(p => p.id === (modelGroups.text?.providerId || providers[0]?.id))
-                      const availableModels = curProv?.models || []
-                      return (
-                        <select
-                          value={modelGroups.text?.model || ''}
-                          onChange={e => {
-                            const val = e.target.value
-                            setModelGroups(prev => ({
-                              ...prev,
-                              text: { ...prev.text, model: val },
-                            }))
-                          }}
-                          style={modernInputStyle}
-                        >
-                          {availableModels.length === 0 && (
-                            <option value="">(该供应商未添加模型)</option>
-                          )}
-                          {availableModels.map(m => (
-                            <option key={m.name} value={m.name}>{m.name}</option>
-                          ))}
-                        </select>
-                      )
-                    })()}
-                  </div>
-                </div>
-              </div>
-
-              {/* 2. 图像模型 */}
-              <div style={groupCardStyle}>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>图像模型 (Image)</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>用于白板拍照、图片文字提取与视觉内容理解</div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <div>
-                    <label style={formLabelStyle}>选择模型供应商</label>
-                    <select
-                      value={modelGroups.image?.providerId || (providers[0]?.id || '')}
-                      onChange={e => {
-                        const newProvId = e.target.value
-                        const p = providers.find(item => item.id === newProvId)
-                        const nextModel = p && p.models.length > 0 ? p.models[0].name : ''
-                        setModelGroups(prev => ({
-                          ...prev,
-                          image: { providerId: newProvId, model: nextModel },
-                        }))
-                      }}
-                      style={modernInputStyle}
-                    >
-                      {providers.map(p => (
-                        <option key={p.id} value={p.id}>{p.name || p.id}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={formLabelStyle}>选用模型</label>
-                    {(() => {
-                      const curProv = providers.find(p => p.id === (modelGroups.image?.providerId || providers[0]?.id))
-                      const availableModels = curProv?.models || []
-                      return (
-                        <select
-                          value={modelGroups.image?.model || ''}
-                          onChange={e => {
-                            const val = e.target.value
-                            setModelGroups(prev => ({
-                              ...prev,
-                              image: { ...prev.image, model: val },
-                            }))
-                          }}
-                          style={modernInputStyle}
-                        >
-                          {availableModels.length === 0 && (
-                            <option value="">(该供应商未添加模型)</option>
-                          )}
-                          {availableModels.map(m => (
-                            <option key={m.name} value={m.name}>{m.name}</option>
-                          ))}
-                        </select>
-                      )
-                    })()}
-                  </div>
-                </div>
-              </div>
-
-              {/* 3. 语音模型 */}
-              <div style={groupCardStyle}>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>语音模型 (Audio)</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>用于随手录音、音频转写为文本内容</div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <div>
-                    <label style={formLabelStyle}>选择模型供应商</label>
-                    <select
-                      value={modelGroups.audio?.providerId || (providers[0]?.id || '')}
-                      onChange={e => {
-                        const newProvId = e.target.value
-                        const p = providers.find(item => item.id === newProvId)
-                        const nextModel = p && p.models.length > 0 ? p.models[0].name : ''
-                        setModelGroups(prev => ({
-                          ...prev,
-                          audio: { providerId: newProvId, model: nextModel },
-                        }))
-                      }}
-                      style={modernInputStyle}
-                    >
-                      {providers.map(p => (
-                        <option key={p.id} value={p.id}>{p.name || p.id}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={formLabelStyle}>选用模型</label>
-                    {(() => {
-                      const curProv = providers.find(p => p.id === (modelGroups.audio?.providerId || providers[0]?.id))
-                      const availableModels = curProv?.models || []
-                      return (
-                        <select
-                          value={modelGroups.audio?.model || ''}
-                          onChange={e => {
-                            const val = e.target.value
-                            setModelGroups(prev => ({
-                              ...prev,
-                              audio: { ...prev.audio, model: val },
-                            }))
-                          }}
-                          style={modernInputStyle}
-                        >
-                          {availableModels.length === 0 && (
-                            <option value="">(该供应商未添加模型)</option>
-                          )}
-                          {availableModels.map(m => (
-                            <option key={m.name} value={m.name}>{m.name}</option>
-                          ))}
-                        </select>
-                      )
-                    })()}
-                  </div>
-                </div>
-              </div>
-
-              {/* 4. 合并模型 */}
-              <div style={groupCardStyle}>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>合并模型 (Merge)</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>用于便签与主题深度重构、自动维护双链</div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <div>
-                    <label style={formLabelStyle}>选择模型供应商</label>
-                    <select
-                      value={modelGroups.merge?.providerId || (providers[0]?.id || '')}
-                      onChange={e => {
-                        const newProvId = e.target.value
-                        const p = providers.find(item => item.id === newProvId)
-                        const nextModel = p && p.models.length > 0 ? p.models[0].name : ''
-                        setModelGroups(prev => ({
-                          ...prev,
-                          merge: { providerId: newProvId, model: nextModel },
-                        }))
-                      }}
-                      style={modernInputStyle}
-                    >
-                      {providers.map(p => (
-                        <option key={p.id} value={p.id}>{p.name || p.id}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={formLabelStyle}>选用模型</label>
-                    {(() => {
-                      const curProv = providers.find(p => p.id === (modelGroups.merge?.providerId || providers[0]?.id))
-                      const availableModels = curProv?.models || []
-                      return (
-                        <select
-                          value={modelGroups.merge?.model || ''}
-                          onChange={e => {
-                            const val = e.target.value
-                            setModelGroups(prev => ({
-                              ...prev,
-                              merge: { ...prev.merge, model: val },
-                            }))
-                          }}
-                          style={modernInputStyle}
-                        >
-                          {availableModels.length === 0 && (
-                            <option value="">(该供应商未添加模型)</option>
-                          )}
-                          {availableModels.map(m => (
-                            <option key={m.name} value={m.name}>{m.name}</option>
-                          ))}
-                        </select>
-                      )
-                    })()}
-                  </div>
-                </div>
-              </div>
+              {GROUP_DEFINITIONS.map(g => (
+                <ModelGroupCard
+                  key={g.key}
+                  groupKey={g.key}
+                  title={g.title}
+                  description={g.description}
+                  providerId={modelGroups[g.key]?.providerId || (providers[0]?.id || '')}
+                  model={modelGroups[g.key]?.model || ''}
+                  providers={providers}
+                  onChange={(key, provId, modelName) => {
+                    setModelGroups(prev => ({
+                      ...prev,
+                      [key]: { providerId: provId, model: modelName }
+                    }))
+                  }}
+                  groupCardStyle={groupCardStyle}
+                  formLabelStyle={formLabelStyle}
+                  modernInputStyle={modernInputStyle}
+                />
+              ))}
 
               {/* 弹窗底栏保存按钮 */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '12px' }}>

@@ -13,19 +13,31 @@ router = APIRouter(prefix="/api/review", tags=["review"])
 @router.get("")
 def list_pending():
     items = db.list_captures(status="awaiting_review", limit=100)
+    topic_ids = set()
     for cap in items:
         if cap.get("suggestion"):
             try:
                 cap["suggestion"] = json.loads(cap["suggestion"])
+                tid = cap["suggestion"].get("topic_id")
+                if tid:
+                    topic_ids.add(tid)
             except (json.JSONDecodeError, TypeError):
                 cap["suggestion"] = None
         else:
             cap["suggestion"] = None
-        if cap["suggestion"] and cap["suggestion"].get("topic_id"):
-            topic = db.get_topic(cap["suggestion"]["topic_id"])
-            cap["suggestion"]["topic_title"] = topic["title"] if topic else None
         if cap.get("error"):
             cap["error"] = sanitize_error_text(cap["error"])
+
+    topic_map = {}
+    for tid in topic_ids:
+        t = db.get_topic(tid)
+        if t:
+            topic_map[tid] = t.get("title")
+
+    for cap in items:
+        if cap.get("suggestion") and cap["suggestion"].get("topic_id"):
+            cap["suggestion"]["topic_title"] = topic_map.get(cap["suggestion"]["topic_id"])
+
     return items
 
 

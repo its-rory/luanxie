@@ -165,8 +165,6 @@ def delete_capture(capture_id: str):
     if cap["status"] == "done":
         # 允许在收件箱中直接删除已合并的 capture，执行级联清理与主题摘要更新
         return db.delete_capture_and_cleanup_topic(capture_id)
-    if cap["media_path"]:
-        (config.DATA_DIR / cap["media_path"]).unlink(missing_ok=True)
     db.delete_capture(capture_id)
     return {"ok": True}
 
