@@ -72,7 +72,7 @@ def _validate_base_url(base_url: str) -> str | None:
 
     base_url = (base_url or "").strip()
     if not base_url:
-        return "Base URL 不能为空"
+        return "AI 地址不能为空"
 
     parsed = urlparse(base_url)
     if parsed.scheme not in ("http", "https"):
@@ -118,11 +118,25 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
         url_lower = url_clean.lower()
         is_anthropic = "anthropic" in prov_lower or "anthropic" in url_lower
 
+        # 智能标准化 Base URL:
+        if is_anthropic:
+            if url_clean.endswith("/v1"):
+                effective_base_url = url_clean[:-3]
+            else:
+                effective_base_url = url_clean
+        else:
+            from urllib.parse import urlparse
+            parsed_u = urlparse(url_clean)
+            if not parsed_u.path or parsed_u.path in ("", "/"):
+                effective_base_url = f"{url_clean}/v1"
+            else:
+                effective_base_url = url_clean
+
         # 1. 针对常规模型供应商，优先使用轻量级 GET /models 探针 (主流平台均秒级返回，不耗 Token，快速鉴权与探活)
         if not is_anthropic:
             try:
                 async with httpx.AsyncClient(timeout=5.0) as http_client:
-                    r = await http_client.get(f"{url_clean}/models", headers=headers)
+                    r = await http_client.get(f"{effective_base_url}/models", headers=headers)
                     if r.status_code == 200:
                         return ""  # 探活成功！
                     elif r.status_code in (401, 403):
@@ -140,7 +154,7 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
             import anthropic
             anth_client = anthropic.Anthropic(
                 api_key=api_key,
-                base_url=base_url,
+                base_url=effective_base_url,
                 default_headers=resolved_headers or None,
                 max_retries=0,
                 timeout=8.0
@@ -156,7 +170,7 @@ async def test_api_config(task: str, provider: str, api_key: str, base_url: str,
             import openai
             oai_client = openai.OpenAI(
                 api_key=api_key,
-                base_url=base_url,
+                base_url=effective_base_url,
                 default_headers=resolved_headers or None,
                 max_retries=0,
                 timeout=8.0

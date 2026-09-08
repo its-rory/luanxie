@@ -51,6 +51,15 @@ def get_client(provider: str, api_key: str | None = None, base_url: str | None =
     if resolved_type == "openai":
         resolved_key = api_key or config.OPENAI_API_KEY or None
         resolved_url = base_url or config.OPENAI_BASE_URL or None
+        if resolved_url:
+            u_clean = resolved_url.rstrip("/")
+            from urllib.parse import urlparse
+            p = urlparse(u_clean)
+            if not p.path or p.path in ("", "/"):
+                resolved_url = f"{u_clean}/v1"
+            else:
+                resolved_url = u_clean
+
         cache_key = ("openai", resolved_key, resolved_url, headers_cache_key)
         with _clients_lock:
             if cache_key not in _clients:
@@ -66,6 +75,13 @@ def get_client(provider: str, api_key: str | None = None, base_url: str | None =
     elif resolved_type == "anthropic":
         resolved_key = api_key or config.ANTHROPIC_API_KEY or None
         resolved_url = base_url or config.ANTHROPIC_BASE_URL or None
+        if resolved_url:
+            u_clean = resolved_url.rstrip("/")
+            if u_clean.endswith("/v1"):
+                resolved_url = u_clean[:-3]
+            else:
+                resolved_url = u_clean
+
         cache_key = ("anthropic", resolved_key, resolved_url, headers_cache_key)
         with _clients_lock:
             if cache_key not in _clients:

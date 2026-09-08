@@ -26,6 +26,27 @@ export interface ModelGroupsConfig {
   merge: { providerId: string; model: string }
 }
 
+export function getProtocolSuffixHint(protocol: string): string {
+  if (protocol === 'anthropic-messages') {
+    return '系统会自动添加 /v1/messages'
+  }
+  return '系统会自动添加 /v1/chat/completions'
+}
+
+export function getProtocolPlaceholder(protocol: string): string {
+  if (protocol === 'anthropic-messages') {
+    return 'https://api.anthropic.com'
+  }
+  return 'https://api.deepseek.com/v1 或 https://api.openai.com'
+}
+
+export function getProtocolHelpText(protocol: string): string {
+  if (protocol === 'anthropic-messages') {
+    return '填入 Anthropic 服务商根地址，系统在调用时会自动追加 /v1/messages。'
+  }
+  return '可填写根域名或 /v1 地址，系统会自动补全并追加 /v1/chat/completions。'
+}
+
 interface SettingsState {
   TEXT_PROVIDER_NAME: string
   TEXT_API_KEY: string
@@ -396,7 +417,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
       return
     }
     if (!providerForm.baseUrl.trim()) {
-      showToast('请输入 API 地址 (Base URL)')
+      showToast('请输入 AI 地址')
       return
     }
 
@@ -1013,18 +1034,6 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                     />
                   </div>
 
-                  {/* API 地址 */}
-                  <div>
-                    <label style={formLabelStyle}>API 地址 (Base URL)</label>
-                    <input
-                      type="text"
-                      placeholder="https://opencode.ai/zen/go/v1"
-                      value={providerForm.baseUrl}
-                      onChange={e => setProviderForm(prev => ({ ...prev, baseUrl: e.target.value }))}
-                      style={modernInputStyle}
-                    />
-                  </div>
-
                   {/* API 协议 */}
                   <div>
                     <label style={formLabelStyle}>API 协议</label>
@@ -1036,6 +1045,23 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                       <option value="openai-completions">openai-completions</option>
                       <option value="anthropic-messages">anthropic-messages</option>
                     </select>
+                  </div>
+
+                  {/* AI 地址 */}
+                  <div>
+                    <label style={formLabelStyle}>
+                      AI 地址（{getProtocolSuffixHint(providerForm.protocol)}）
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={getProtocolPlaceholder(providerForm.protocol)}
+                      value={providerForm.baseUrl}
+                      onChange={e => setProviderForm(prev => ({ ...prev, baseUrl: e.target.value }))}
+                      style={modernInputStyle}
+                    />
+                    <p style={formHelpTextStyle}>
+                      {getProtocolHelpText(providerForm.protocol)}
+                    </p>
                   </div>
 
                   {/* API 密钥 */}
