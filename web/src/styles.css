@@ -60,49 +60,66 @@ body {
 .masthead .sub { margin-left: auto; font-size: 12px; color: var(--ink-faint); }
 
 /* ---------- 主区 ---------- */
-main { flex: 1; padding: 6px 16px 96px; max-width: 640px; width: 100%; margin: 0 auto; }
-
-/* ---------- 底部 tab ---------- */
-nav.tabs {
-  position: fixed; left: 0; right: 0; bottom: 0;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  border-top: 1px solid var(--line);
-  display: flex; justify-content: space-around; align-items: center;
-  padding: 8px 12px calc(var(--safe-bottom) + 8px);
-  z-index: 30;
+main {
+  flex: 1;
+  padding: 6px 16px calc(var(--safe-bottom) + 120px);
   max-width: 640px;
+  width: 100%;
   margin: 0 auto;
 }
+
+/* ---------- 底部 Dock 导航栏 ---------- */
+nav.tabs {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--safe-bottom) + 10px);
+  max-width: 520px;
+  margin: 0 auto;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(226, 232, 240, 0.88);
+  border-radius: 16px;
+  box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.08), 0 4px 10px -2px rgba(15, 23, 42, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px;
+  gap: 4px;
+  z-index: 30;
+}
 nav.tabs button {
-  width: 52px; height: 52px; min-width: 52px; min-height: 52px; max-width: 52px; max-height: 52px;
-  aspect-ratio: 1 / 1;
-  background: #ffffff;
-  border: 1.5px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--shadow-xs);
+  flex: 1;
+  height: 42px;
+  background: transparent;
+  border: none;
+  border-radius: 11px;
   font-family: var(--sans);
-  font-size: 13px; font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 500;
   color: var(--ink-soft);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; padding: 0;
-  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0 4px;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   -webkit-tap-highlight-color: transparent;
 }
 nav.tabs button:hover {
-  border-color: var(--line-strong);
+  background: #f1f5f9;
   color: var(--ink);
 }
 nav.tabs button:active {
-  transform: scale(0.95);
+  transform: scale(0.96);
 }
 nav.tabs button.active {
   background: #eff6ff;
-  border-color: var(--cinnabar);
   color: var(--cinnabar);
   font-weight: 600;
-  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.12);
 }
 nav.tabs button .tab-label {
   display: inline-block;
@@ -110,11 +127,20 @@ nav.tabs button .tab-label {
   white-space: nowrap;
 }
 nav.tabs button .badge {
-  position: absolute; top: -5px; right: -5px;
-  background: var(--danger); color: #ffffff;
-  font-size: 10px; font-weight: 700; font-family: var(--sans);
-  min-width: 17px; height: 17px; line-height: 15px;
-  border-radius: 9px; padding: 0 4px; text-align: center;
+  position: absolute;
+  top: 4px;
+  right: calc(50% - 24px);
+  background: var(--danger);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--sans);
+  min-width: 16px;
+  height: 16px;
+  line-height: 14px;
+  border-radius: 8px;
+  padding: 0 4px;
+  text-align: center;
   border: 1.5px solid #ffffff;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }

@@ -854,7 +854,7 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
         )}
       </div>
 
-      <div className="versions" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--line)', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+      <div className="versions" style={{ marginTop: '24px', marginBottom: '36px', paddingTop: '16px', borderTop: '1px solid var(--line)', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
         {isEditing ? (
           <>
             <button className="btn small primary" onClick={handleSave} disabled={saving}>
