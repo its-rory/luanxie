@@ -39,4 +39,4 @@ get_local_ip() {
 LOCAL_IP=$(get_local_ip)
 
 echo "乱写APP 启动中: http://$LOCAL_IP:$PORT"
-exec "$UV" run uvicorn server.main:app --host 0.0.0.0 --port "$PORT" --proxy-headers --forwarded-allow-ips='*'
+exec "$UV" run --no-sync uvicorn server.main:app --host 0.0.0.0 --port "$PORT" --proxy-headers --forwarded-allow-ips='*'
