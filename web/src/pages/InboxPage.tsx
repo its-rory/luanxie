@@ -7,7 +7,7 @@ const TYPE_GLYPH: Record<string, string> = { text: '字', audio: '言', image: '
 
 export default function InboxPage({ tick, openTopic, showToast }: {
   tick: number
-  openTopic: (id: string) => void
+  openTopic: (id: string, captureId?: string) => void
   showToast: (m: string) => void
 }) {
   const [items, setItems] = useState<Capture[]>([])
@@ -90,8 +90,8 @@ export default function InboxPage({ tick, openTopic, showToast }: {
                   className="topic-link"
                   role="link"
                   tabIndex={0}
-                  onClick={() => openTopic(c.topic_id!)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTopic(c.topic_id!); } }}
+                  onClick={() => openTopic(c.topic_id!, c.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTopic(c.topic_id!, c.id); } }}
                 >
                   [[{c.topic_title || '查看主题'}]]
                 </span>

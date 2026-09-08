@@ -472,6 +472,44 @@ nav.tabs button .badge {
   font-weight: 600;
 }
 
+/* 来自收件箱的卡片高亮脉冲效果 */
+.sub-card.highlight-target {
+  animation: cardHighlightPulse 3s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  border-color: var(--cinnabar) !important;
+}
+
+@keyframes cardHighlightPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.5), var(--shadow-sm);
+    border-color: var(--cinnabar);
+    background-color: #f0f7ff;
+  }
+  25% {
+    box-shadow: 0 0 0 8px rgba(37, 99, 235, 0.22), 0 8px 24px rgba(37, 99, 235, 0.12);
+    border-color: var(--cinnabar);
+    background-color: #f0f7ff;
+  }
+  100% {
+    box-shadow: var(--shadow-sm);
+    border-color: var(--line);
+    background-color: var(--paper-card);
+  }
+}
+
+.target-card-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #93c5fd;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+  animation: fadeIn 0.3s ease;
+}
+
 /* 子卡片右上角三点菜单及浮层 */
 .card-menu-trigger {
   width: 28px;

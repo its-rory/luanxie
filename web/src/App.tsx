@@ -23,6 +23,7 @@ export default function App() {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null)
   const [tab, setTab] = useState<Tab>('capture')
   const [topicId, setTopicId] = useState<string | null>(null)
+  const [highlightCaptureId, setHighlightCaptureId] = useState<string | null>(null)
   const [reviewCount, setReviewCount] = useState(0)
   const [inboxWorkingCount, setInboxWorkingCount] = useState(0)
   const [toast, setToast] = useState<string | null>(null)
@@ -77,8 +78,9 @@ export default function App() {
     }
   }, [loggedIn, refreshReviewCount, refreshInboxWorkingCount])
 
-  const openTopic = useCallback((id: string) => {
+  const openTopic = useCallback((id: string, captureId?: string) => {
     setTopicId(id)
+    setHighlightCaptureId(captureId || null)
     setTab('topics')
   }, [])
 
@@ -109,12 +111,25 @@ export default function App() {
           {tab === 'review' && (
             <ReviewPage tick={tick} onDecided={() => { refreshReviewCount(); showToast('已处理') }} showToast={showToast} />
           )}
-          {tab === 'topics' && !topicId && <TopicsPage tick={tick} openTopic={setTopicId} />}
+          {tab === 'topics' && !topicId && <TopicsPage tick={tick} openTopic={openTopic} />}
           {tab === 'topics' && topicId && (
-            <TopicDetail id={topicId} back={() => setTopicId(null)} openTopic={openTopic} openByTitle={async (title) => {
-              const hit = await api.topics(undefined, title).then((res) => res[0]).catch(() => null)
-              if (hit) setTopicId(hit.id)
-            }} showToast={showToast} />
+            <TopicDetail
+              id={topicId}
+              back={() => {
+                setTopicId(null)
+                setHighlightCaptureId(null)
+              }}
+              openTopic={openTopic}
+              openByTitle={async (title) => {
+                const hit = await api.topics(undefined, title).then((res) => res[0]).catch(() => null)
+                if (hit) {
+                  setTopicId(hit.id)
+                  setHighlightCaptureId(null)
+                }
+              }}
+              showToast={showToast}
+              highlightCaptureId={highlightCaptureId}
+            />
           )}
           {tab === 'settings' && <SettingsPage showToast={showToast} onLogout={() => setLoggedIn(false)} />}
         </ErrorBoundary>
@@ -126,7 +141,10 @@ export default function App() {
             className={tab === t.key ? 'active' : ''}
             onClick={() => {
               setTab(t.key)
-              if (t.key !== 'topics') setTopicId(null)
+              if (t.key !== 'topics') {
+                setTopicId(null)
+                setHighlightCaptureId(null)
+              }
             }}
           >
             <span className="tab-label">{t.label}</span>

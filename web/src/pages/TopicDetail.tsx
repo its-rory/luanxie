@@ -198,12 +198,13 @@ function parseTopicBody(body: string): { aiParse: string; trajectory: string } {
   }
 }
 
-export default function TopicDetail({ id, back, openTopic, openByTitle, showToast }: {
+export default function TopicDetail({ id, back, openTopic, openByTitle, showToast, highlightCaptureId }: {
   id: string
   back: () => void
-  openTopic?: (id: string) => void
+  openTopic?: (id: string, captureId?: string) => void
   openByTitle: (title: string) => void
   showToast: (m: string) => void
+  highlightCaptureId?: string | null
 }) {
   const [topic, setTopic] = useState<Topic | null>(null)
   const [versions, setVersions] = useState<TopicVersion[]>([])
@@ -230,6 +231,27 @@ export default function TopicDetail({ id, back, openTopic, openByTitle, showToas
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [editCapTitle, setEditCapTitle] = useState('')
   const [activeMenuCapId, setActiveMenuCapId] = useState<string | null>(null)
+
+  // Auto-scroll to target sub-card when navigated from Inbox
+  const hasScrolledTargetRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!highlightCaptureId) {
+      hasScrolledTargetRef.current = null
+      return
+    }
+    if (loadingCaptures || captures.length === 0) return
+    if (hasScrolledTargetRef.current === highlightCaptureId) return
+
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`sub-card-${highlightCaptureId}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        hasScrolledTargetRef.current = highlightCaptureId
+      }
+    }, 150)
+
+    return () => clearTimeout(timer)
+  }, [highlightCaptureId, loadingCaptures, captures])
 
   // Sub-card reordering state
   const [isReorderingCaps, setIsReorderingCaps] = useState(false)
@@ -851,14 +873,17 @@ export default function TopicDetail({ id, back, openTopic, openByTitle, showToas
             const isPinned = Boolean(cap.is_pinned)
             const wordCount = getWordCount(cap)
 
+            const isHighlighted = highlightCaptureId === cap.id
+
             return (
               <div 
                 key={cap.id} 
-                className={`sub-card ${isPinned ? 'pinned' : ''}`}
+                id={`sub-card-${cap.id}`}
+                className={`sub-card ${isPinned ? 'pinned' : ''} ${isHighlighted ? 'highlight-target' : ''}`}
               >
                 {/* Sub-card header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '10px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 'bold', fontSize: '14.5px', color: 'var(--ink)' }}>子卡片 #{idx + 1}{cap.title ? ` : ${cap.title}` : ''}</span>
                     <span className="tag" style={{ fontSize: '11px' }}>
                       {typeLabel}
@@ -866,6 +891,11 @@ export default function TopicDetail({ id, back, openTopic, openByTitle, showToas
                     {isPinned && (
                       <span className="pinned-badge">
                         📌 置顶
+                      </span>
+                    )}
+                    {isHighlighted && (
+                      <span className="target-card-badge">
+                        🎯 来自收件箱
                       </span>
                     )}
                   </div>
