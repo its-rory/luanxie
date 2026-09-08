@@ -68,7 +68,6 @@ CREATE INDEX IF NOT EXISTS idx_captures_status ON captures(status);
 CREATE INDEX IF NOT EXISTS idx_captures_created ON captures(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_captures_topic ON captures(topic_id);
 CREATE INDEX IF NOT EXISTS idx_topics_updated ON topics(updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_topics_sort ON topics(sort_order ASC, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
@@ -152,6 +151,11 @@ def get_conn() -> sqlite3.Connection:
                 # Migration: add sort_order to topics
                 try:
                     conn.execute("ALTER TABLE topics ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+                    conn.commit()
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_topics_sort ON topics(sort_order ASC, updated_at DESC)")
                     conn.commit()
                 except sqlite3.OperationalError:
                     pass
