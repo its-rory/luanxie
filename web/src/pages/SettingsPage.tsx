@@ -355,25 +355,11 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
   const handleDeleteProvider = (id: string) => {
     if (!confirm('确定要删除该模型供应商吗？')) return
     const updated = providers.filter(p => p.id !== id)
-    if (updated.length > 0 && !updated.some(p => p.active)) {
-      updated[0].active = true
-    }
     setProviders(updated)
     if (editingProviderId === id) {
       setEditingProviderId(null)
     }
     persistProvidersAndSave(updated, adminPassword)
-  }
-
-  // 激活供应商
-  const handleActivateProvider = (id: string) => {
-    const updated = providers.map(p => ({
-      ...p,
-      active: p.id === id,
-    }))
-    setProviders(updated)
-    persistProvidersAndSave(updated, adminPassword)
-    showToast('已切换生效提供商')
   }
 
   // 为当前编辑的供应商添加模型
@@ -436,7 +422,6 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
     let updated: ModelProvider[] = []
     if (editingProviderId === 'new') {
       const newP = { ...providerForm, id: providerForm.id.trim() || `provider-${Date.now().toString().slice(-4)}` }
-      if (providers.length === 0) newP.active = true
       updated = [...providers, newP]
     } else {
       updated = providers.map(p => (p.id === editingProviderId ? { ...providerForm } : p))
@@ -886,16 +871,26 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      border: p.active ? '1.5px solid #93c5fd' : '1px solid #e2e8f0',
+                      border: '1px solid #e2e8f0',
                       borderRadius: '10px',
-                      padding: '10px 14px',
-                      background: p.active ? '#f8fafc' : '#ffffff',
+                      padding: '10px 12px',
+                      background: '#ffffff',
                       boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)',
+                      gap: '8px',
                     }}
                   >
-                    {/* 左侧：文字与状态点 */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>
+                    {/* 左侧：名称、状态点、模型数量数字 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                      <span
+                        style={{
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          color: '#0f172a',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         {p.name || p.id}
                       </span>
                       <span
@@ -905,6 +900,7 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                           height: '8px',
                           borderRadius: '50%',
                           background: isKeySet ? '#10b981' : '#ef4444',
+                          flexShrink: 0,
                         }}
                         title={isKeySet ? '已填密钥' : '未填密钥'}
                       />
@@ -916,44 +912,17 @@ export default function SettingsPage({ showToast, onLogout }: { showToast: (m: s
                           border: '1px solid #e2e8f0',
                           padding: '1px 6px',
                           borderRadius: '4px',
+                          fontWeight: 600,
+                          flexShrink: 0,
                         }}
+                        title={`包含 ${p.models.length} 个模型`}
                       >
-                        {p.models.length} 个模型
+                        {p.models.length}
                       </span>
-                      {p.active && (
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            color: '#2563eb',
-                            background: '#eff6ff',
-                            border: '1px solid #bfdbfe',
-                            padding: '1px 6px',
-                            borderRadius: '4px',
-                            fontWeight: 500,
-                          }}
-                        >
-                          默认
-                        </span>
-                      )}
                     </div>
 
-                    {/* 右侧：按钮组 (使用、编辑、删除) */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {!p.active && (
-                        <button
-                          type="button"
-                          onClick={() => handleActivateProvider(p.id)}
-                          style={{
-                            ...roundedBorderButtonStyle,
-                            background: '#eff6ff',
-                            borderColor: '#bfdbfe',
-                            color: '#2563eb',
-                          }}
-                          title="设为默认供应商"
-                        >
-                          设为默认
-                        </button>
-                      )}
+                    {/* 右侧：按钮组 (编辑、删除) */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                       <button
                         type="button"
                         onClick={() => handleEditProvider(p)}
@@ -1469,7 +1438,7 @@ const overlayStyle: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   zIndex: 100,
-  padding: '20px',
+  padding: '12px',
 }
 
 const modalBoxStyle: React.CSSProperties = {
@@ -1478,13 +1447,13 @@ const modalBoxStyle: React.CSSProperties = {
   borderRadius: '16px',
   width: '100%',
   maxWidth: '580px',
-  maxHeight: '88vh',
+  maxHeight: '92vh',
   overflowY: 'auto',
-  padding: '22px',
+  padding: '18px 14px',
   boxShadow: '0 20px 45px rgba(0, 0, 0, 0.12)',
   display: 'flex',
   flexDirection: 'column',
-  gap: '16px',
+  gap: '14px',
 }
 
 const modalHeaderStyle: React.CSSProperties = {
