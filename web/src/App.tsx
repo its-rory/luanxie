@@ -111,7 +111,7 @@ export default function App() {
           )}
           {tab === 'topics' && !topicId && <TopicsPage tick={tick} openTopic={setTopicId} />}
           {tab === 'topics' && topicId && (
-            <TopicDetail id={topicId} back={() => setTopicId(null)} openByTitle={async (title) => {
+            <TopicDetail id={topicId} back={() => setTopicId(null)} openTopic={openTopic} openByTitle={async (title) => {
               const hit = await api.topics(undefined, title).then((res) => res[0]).catch(() => null)
               if (hit) setTopicId(hit.id)
             }} showToast={showToast} />

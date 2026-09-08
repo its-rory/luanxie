@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS captures (
   version       INTEGER NOT NULL DEFAULT 0,
   title         TEXT,
   is_pinned     INTEGER NOT NULL DEFAULT 0,
-  pinned_at     TEXT
+  pinned_at     TEXT,
+  sort_order    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS topics (
@@ -148,6 +149,12 @@ def get_conn() -> sqlite3.Connection:
                     conn.commit()
                 except sqlite3.OperationalError:
                     pass
+                # Migration: add sort_order to captures
+                try:
+                    conn.execute("ALTER TABLE captures ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+                    conn.commit()
+                except sqlite3.OperationalError:
+                    pass
                 # Migration: add sort_order to topics
                 try:
                     conn.execute("ALTER TABLE topics ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
@@ -230,7 +237,7 @@ def update_capture(capture_id: str, **fields) -> None:
     allowed = {
         "type", "status", "raw_text", "media_path", "transcript", "clean_text",
         "topic_id", "confidence", "suggestion", "error", "retry_count", "created_at",
-        "processed_at", "title", "is_pinned", "pinned_at"
+        "processed_at", "title", "is_pinned", "pinned_at", "sort_order"
     }
     for k in fields:
         if k not in allowed:
@@ -569,7 +576,7 @@ def delete_session(token: str) -> None:
 
 def list_captures_by_topic(topic_id: str) -> list[dict]:
     cur = get_conn().execute(
-        "SELECT * FROM captures WHERE topic_id=? ORDER BY is_pinned DESC, pinned_at DESC, created_at ASC", (topic_id,)
+        "SELECT * FROM captures WHERE topic_id=? ORDER BY is_pinned DESC, pinned_at DESC, sort_order ASC, created_at ASC", (topic_id,)
     )
     return _rows(cur)
 
@@ -589,11 +596,77 @@ def toggle_capture_pin(capture_id: str) -> dict:
     return get_capture(capture_id)
 
 
+def reorder_captures(topic_id: str, capture_ids: list[str]) -> None:
+    conn = get_conn()
+    with conn:
+        for idx, cid in enumerate(capture_ids):
+            conn.execute("UPDATE captures SET sort_order=? WHERE id=? AND topic_id=?", (idx, cid, topic_id))
+
+
 def reorder_topics(topic_ids: list[str]) -> None:
     conn = get_conn()
     with conn:
         for idx, tid in enumerate(topic_ids):
             conn.execute("UPDATE topics SET sort_order=? WHERE id=?", (idx, tid))
+
+
+def merge_topics(source_id: str, target_id: str, position: str = "time") -> dict:
+    conn = get_conn()
+    src = get_topic(source_id)
+    dst = get_topic(target_id)
+    if not src:
+        raise ValueError(f"源主题不存在: {source_id}")
+    if not dst:
+        raise ValueError(f"目标主题不存在: {target_id}")
+    if source_id == target_id:
+        raise ValueError("源主题与目标主题相同，无法合并")
+
+    src_caps = list_captures_by_topic(source_id)
+    dst_caps = list_captures_by_topic(target_id)
+
+    # Determine order of combined captures
+    if position == "start":
+        combined = src_caps + dst_caps
+    elif position == "end":
+        combined = dst_caps + src_caps
+    else:  # "time"
+        combined = sorted(src_caps + dst_caps, key=lambda c: c.get("created_at") or "")
+
+    ts = now()
+    with conn:
+        # 1. Update source captures to belong to target_id
+        conn.execute("UPDATE captures SET topic_id=? WHERE topic_id=?", (target_id, source_id))
+
+        # 2. Update sort_order for all combined captures
+        for idx, cap in enumerate(combined):
+            conn.execute("UPDATE captures SET sort_order=? WHERE id=?", (idx, cap["id"]))
+
+        # 3. Merge tags
+        src_tags = json.loads(src.get("tags") or "[]")
+        dst_tags = json.loads(dst.get("tags") or "[]")
+        merged_tags = sorted(list(set(dst_tags + src_tags)))
+
+        # 4. Recompute summary from latest capture if exists
+        new_summary = (combined[-1].get("clean_text") or "")[:100] if combined else dst.get("summary", "")
+
+        conn.execute(
+            "UPDATE topics SET tags=?, summary=?, updated_at=? WHERE id=?",
+            (json.dumps(merged_tags, ensure_ascii=False), new_summary, ts, target_id)
+        )
+
+        # 5. Update FTS for target_id
+        conn.execute("DELETE FROM topics_fts WHERE topic_id=?", (target_id,))
+        conn.execute(
+            "INSERT INTO topics_fts (topic_id, title, summary, tags) VALUES (?,?,?,?)",
+            (target_id, dst["title"], new_summary, json.dumps(merged_tags, ensure_ascii=False))
+        )
+
+        # 6. Delete source topic metadata
+        conn.execute("DELETE FROM topic_versions WHERE topic_id=?", (source_id,))
+        conn.execute("DELETE FROM topics_fts WHERE topic_id=?", (source_id,))
+        conn.execute("DELETE FROM topics WHERE id=?", (source_id,))
+
+    return get_topic(target_id)
 
 
 def update_topic_summary(topic_id: str, summary: str) -> None:

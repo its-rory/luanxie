@@ -565,6 +565,234 @@ nav.tabs button .badge {
   user-select: none;
 }
 
+/* 子卡片排序模式 */
+.reorder-control-bar {
+  position: sticky;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  z-index: 25;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  animation: fadeIn 0.15s ease;
+}
+.reorder-control-bar .reorder-hint {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.reorder-control-bar .reorder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sub-card-collapsed {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-shadow: var(--shadow-xs);
+  transition: transform 0.22s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.22s ease, border-color 0.15s ease;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-y;
+}
+.sub-card-collapsed.pinned {
+  border-left: 3.5px solid var(--cinnabar);
+}
+.sub-card-collapsed:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-sm);
+}
+.sub-card-collapsed.sortable-chosen {
+  transform: scale(1.025) rotate(-0.5deg);
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+  border-color: #93c5fd;
+  z-index: 50;
+  cursor: grabbing;
+}
+.sub-card-collapsed.sortable-ghost {
+  opacity: 0.38;
+  background: #eff6ff !important;
+  border: 1.5px dashed #60a5fa !important;
+  box-shadow: none !important;
+  transform: scale(0.985);
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+.sub-card-collapsed.sortable-drag {
+  opacity: 0.95;
+  cursor: grabbing;
+}
+.sub-card-collapsed .collapsed-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.sub-card-collapsed .drag-handle {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--ink-faint);
+  cursor: grab;
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.sub-card-collapsed .drag-handle:hover {
+  background: var(--paper-deep);
+  color: var(--ink);
+}
+
+/* 主题合并弹窗 */
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.15s ease;
+}
+.merge-dialog {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.16), 0 4px 12px rgba(15, 23, 42, 0.06);
+  animation: menuFadeIn 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+.merge-dialog-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.merge-dialog-header h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.merge-dialog-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: var(--ink-faint);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  line-height: 1;
+}
+.merge-dialog-close:hover {
+  background: var(--paper-deep);
+  color: var(--ink);
+}
+.merge-dialog-body {
+  padding: 14px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.merge-topic-btn {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.merge-topic-btn:hover {
+  background: var(--paper-deep);
+  border-color: var(--cinnabar);
+}
+.merge-topic-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.merge-topic-summary {
+  font-size: 12px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.merge-opt-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s ease;
+}
+.merge-opt-card:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+.merge-opt-icon {
+  font-size: 22px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.merge-opt-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.merge-opt-desc {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+
 
 .detail-head {
   margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line);

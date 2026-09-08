@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import Sortable from 'sortablejs'
 import { api } from '../api'
 import type { Capture, CaptureVersion, Topic, TopicVersion } from '../types'
 import DiffView from '../components/DiffView'
@@ -197,9 +198,10 @@ function parseTopicBody(body: string): { aiParse: string; trajectory: string } {
   }
 }
 
-export default function TopicDetail({ id, back, openByTitle, showToast }: {
+export default function TopicDetail({ id, back, openTopic, openByTitle, showToast }: {
   id: string
   back: () => void
+  openTopic?: (id: string) => void
   openByTitle: (title: string) => void
   showToast: (m: string) => void
 }) {
@@ -228,6 +230,24 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [editCapTitle, setEditCapTitle] = useState('')
   const [activeMenuCapId, setActiveMenuCapId] = useState<string | null>(null)
+
+  // Sub-card reordering state
+  const [isReorderingCaps, setIsReorderingCaps] = useState(false)
+  const [reorderList, setReorderList] = useState<Capture[]>([])
+  const [savingReorder, setSavingReorder] = useState(false)
+  const reorderContainerRef = useRef<HTMLDivElement>(null)
+  const subCardSortableRef = useRef<Sortable | null>(null)
+  const isDraggingCapRef = useRef(false)
+  const reorderListRef = useRef<Capture[]>([])
+  reorderListRef.current = reorderList
+
+  // Topic merge modal state
+  const [showMergeModal, setShowMergeModal] = useState(false)
+  const [mergeStep, setMergeStep] = useState<1 | 2>(1)
+  const [candidateTopics, setCandidateTopics] = useState<Topic[]>([])
+  const [loadingCandidates, setLoadingCandidates] = useState(false)
+  const [selectedTargetTopic, setSelectedTargetTopic] = useState<Topic | null>(null)
+  const [merging, setMerging] = useState(false)
 
   useEffect(() => {
     const handleClickOutside = () => setActiveMenuCapId(null)
@@ -483,6 +503,112 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
     return text.length
   }
 
+  const handleStartReorder = () => {
+    setActiveMenuCapId(null)
+    setReorderList([...captures])
+    setIsReorderingCaps(true)
+  }
+
+  const handleCancelReorder = () => {
+    setIsReorderingCaps(false)
+    setReorderList([])
+  }
+
+  const handleSaveReorder = async () => {
+    setSavingReorder(true)
+    try {
+      const ids = reorderList.map((c) => c.id)
+      await api.reorderCaptures(id, ids)
+      setCaptures(reorderList)
+      setIsReorderingCaps(false)
+      showToast('子卡片排序已保存')
+    } catch (e: any) {
+      showToast('保存排序失败: ' + (e.message || String(e)))
+    } finally {
+      setSavingReorder(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!isReorderingCaps || !reorderContainerRef.current) {
+      if (subCardSortableRef.current) {
+        subCardSortableRef.current.destroy()
+        subCardSortableRef.current = null
+      }
+      return
+    }
+
+    subCardSortableRef.current = Sortable.create(reorderContainerRef.current, {
+      animation: 260,
+      easing: 'cubic-bezier(0.2, 0, 0, 1)',
+      delay: 350,
+      delayOnTouchOnly: false,
+      touchStartThreshold: 5,
+      handle: '.drag-handle',
+      chosenClass: 'sortable-chosen',
+      ghostClass: 'sortable-ghost',
+      dragClass: 'sortable-drag',
+      draggable: '.sub-card-collapsed',
+      forceFallback: false,
+      onStart: () => {
+        isDraggingCapRef.current = true
+        if ('vibrate' in navigator) {
+          try { navigator.vibrate(40) } catch {}
+        }
+      },
+      onEnd: (evt) => {
+        setTimeout(() => { isDraggingCapRef.current = false }, 80)
+        const { oldIndex, newIndex } = evt
+        if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return
+        const current = [...reorderListRef.current]
+        const [moved] = current.splice(oldIndex, 1)
+        current.splice(newIndex, 0, moved)
+        setReorderList(current)
+      },
+    })
+
+    return () => {
+      if (subCardSortableRef.current) {
+        subCardSortableRef.current.destroy()
+        subCardSortableRef.current = null
+      }
+    }
+  }, [isReorderingCaps])
+
+  const handleOpenMerge = async () => {
+    setShowMergeModal(true)
+    setMergeStep(1)
+    setSelectedTargetTopic(null)
+    setLoadingCandidates(true)
+    try {
+      const list = await api.topics()
+      setCandidateTopics(list.filter((t) => t.id !== id))
+    } catch {
+      showToast('获取主题列表失败')
+    } finally {
+      setLoadingCandidates(false)
+    }
+  }
+
+  const handleExecuteMerge = async (position: 'time' | 'end' | 'start') => {
+    if (!selectedTargetTopic) return
+    setMerging(true)
+    try {
+      const merged = await api.mergeTopic(id, selectedTargetTopic.id, position)
+      showToast(`已成功合并到「${merged.title}」`)
+      setShowMergeModal(false)
+      if (openTopic) {
+        openTopic(merged.id)
+      } else {
+        back()
+      }
+    } catch (e: any) {
+      showToast('合并失败: ' + (e.message || String(e)))
+    } finally {
+      setMerging(false)
+    }
+  }
+
   if (!topic) return <div className="empty">加载中...</div>
 
   const diffTarget = versions.find((v) => v.version === diffFor)
@@ -658,18 +784,56 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
       )}
 
       {/* Render captures as separate sub-cards */}
-      <div className="sub-cards-feed" style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '24px', marginBottom: '24px' }}>
-        <h3 style={{ fontFamily: 'var(--serif)', fontSize: '18px', fontWeight: 'bold', borderBottom: '2px solid var(--line)', paddingBottom: '8px', color: 'var(--ink)', margin: 0 }}>
-          子记录卡片清单 ({captures.length})
-        </h3>
+      <div className="sub-cards-feed" style={{ display: 'flex', flexDirection: 'column', gap: isReorderingCaps ? '10px' : '20px', marginTop: '24px', marginBottom: '24px' }}>
+        {isReorderingCaps ? (
+          <>
+            <div className="reorder-control-bar">
+              <div className="reorder-hint">
+                <span>↕️ 调整子卡片顺序</span>
+                <span style={{ fontSize: '11px', color: 'var(--ink-faint)', fontWeight: 'normal' }}>(长按或拖拽右侧手柄)</span>
+              </div>
+              <div className="reorder-actions">
+                <button className="btn small ghost" onClick={handleCancelReorder} disabled={savingReorder}>
+                  取消
+                </button>
+                <button className="btn small primary" onClick={handleSaveReorder} disabled={savingReorder}>
+                  {savingReorder ? '保存中…' : '完成'}
+                </button>
+              </div>
+            </div>
 
-        {loadingCaptures && captures.length === 0 ? (
-          <div style={{ color: 'var(--ink-soft)', fontSize: '14px', textAlign: 'center', padding: '24px' }}>数据加载中…</div>
-        ) : captures.length === 0 ? (
-          <div style={{ color: 'var(--ink-soft)', fontSize: '14px', textAlign: 'center', padding: '24px', background: 'var(--paper-deep)', borderRadius: '12px' }}>
-            暂无子记录 (该主题为空或未分配捕获)
-          </div>
+            <div ref={reorderContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {reorderList.map((cap, idx) => (
+                <div 
+                  key={cap.id} 
+                  className={`sub-card-collapsed ${Boolean(cap.is_pinned) ? 'pinned' : ''}`}
+                >
+                  <div className="collapsed-title">
+                    {Boolean(cap.is_pinned) && (
+                      <span className="pinned-badge" style={{ padding: '0 4px', fontSize: '10px' }}>📌 置顶</span>
+                    )}
+                    <span>子卡片 #{idx + 1}{cap.title ? ` : ${cap.title}` : ''}</span>
+                  </div>
+                  <div className="drag-handle" title="长按或拖拽排序">
+                    ☰
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         ) : (
+          <>
+            <h3 style={{ fontFamily: 'var(--serif)', fontSize: '18px', fontWeight: 'bold', borderBottom: '2px solid var(--line)', paddingBottom: '8px', color: 'var(--ink)', margin: 0 }}>
+              子记录卡片清单 ({captures.length})
+            </h3>
+
+            {loadingCaptures && captures.length === 0 ? (
+              <div style={{ color: 'var(--ink-soft)', fontSize: '14px', textAlign: 'center', padding: '24px' }}>数据加载中…</div>
+            ) : captures.length === 0 ? (
+              <div style={{ color: 'var(--ink-soft)', fontSize: '14px', textAlign: 'center', padding: '24px', background: 'var(--paper-deep)', borderRadius: '12px' }}>
+                暂无子记录 (该主题为空或未分配捕获)
+              </div>
+            ) : (
           captures.map((cap, idx) => {
             const isEditingCap = editingCaptureId === cap.id
             const capVerState = activeCapVersions[cap.id] || { versions: [], show: false }
@@ -742,13 +906,19 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                               <span className="menu-icon">📋</span>
                               <span>复制</span>
                             </button>
-                            <div className="card-menu-divider" />
                             <button 
                               className="card-menu-item" 
                               onClick={() => handleTogglePin(cap.id)}
                             >
                               <span className="menu-icon">📌</span>
                               <span>{isPinned ? '取消置顶' : '置顶'}</span>
+                            </button>
+                            <button 
+                              className="card-menu-item" 
+                              onClick={() => handleStartReorder()}
+                            >
+                              <span className="menu-icon">↕️</span>
+                              <span>排序</span>
                             </button>
                             <div className="card-menu-divider" />
                             <button 
@@ -967,6 +1137,8 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
             )
           })
         )}
+          </>
+        )}
       </div>
 
       <div className="versions" style={{ marginTop: '24px', marginBottom: '36px', paddingTop: '16px', borderTop: '1px solid var(--line)', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -986,6 +1158,9 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                 {showVersions ? '收起版本历史' : `主题历史(${versions.length})`}
               </button>
             )}
+            <button className="btn small" onClick={handleOpenMerge}>
+              合并主题
+            </button>
             <button className="btn small" onClick={handleStartEdit}>
               编辑主题标题
             </button>
@@ -1044,6 +1219,90 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
             }}
             onClick={(e) => e.stopPropagation()}
           />
+        </div>
+      )}
+
+      {showMergeModal && (
+        <div className="modal-backdrop" onClick={() => !merging && setShowMergeModal(false)}>
+          <div className="merge-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="merge-dialog-header">
+              <h3>{mergeStep === 1 ? '选择要合并到的目标主题' : `合并到:「${selectedTargetTopic?.title}」`}</h3>
+              <button className="merge-dialog-close" onClick={() => !merging && setShowMergeModal(false)} disabled={merging}>
+                ✕
+              </button>
+            </div>
+
+            <div className="merge-dialog-body">
+              {mergeStep === 1 ? (
+                <>
+                  {loadingCandidates ? (
+                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--ink-soft)', fontSize: '13px' }}>
+                      正在加载主题列表…
+                    </div>
+                  ) : candidateTopics.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--ink-soft)', fontSize: '13px' }}>
+                      暂无其他主题可合并
+                    </div>
+                  ) : (
+                    candidateTopics.map((t) => (
+                      <div
+                        key={t.id}
+                        className="merge-topic-btn"
+                        onClick={() => {
+                          setSelectedTargetTopic(t)
+                          setMergeStep(2)
+                        }}
+                      >
+                        <div className="merge-topic-title">{t.title}</div>
+                        <div className="merge-topic-summary">{t.summary || '(暂无摘要)'}</div>
+                      </div>
+                    ))
+                  )}
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: '13px', color: 'var(--ink-soft)', marginBottom: '4px' }}>
+                    请选择当前主题子卡片合并后的排序方式：
+                  </div>
+
+                  <div className="merge-opt-card" onClick={() => !merging && handleExecuteMerge('time')}>
+                    <div className="merge-opt-icon">🕒</div>
+                    <div>
+                      <div className="merge-opt-title">按时间排序</div>
+                      <div className="merge-opt-desc">卡片按生成时间交叉自然排列</div>
+                    </div>
+                  </div>
+
+                  <div className="merge-opt-card" onClick={() => !merging && handleExecuteMerge('end')}>
+                    <div className="merge-opt-icon">⬇️</div>
+                    <div>
+                      <div className="merge-opt-title">移至最后</div>
+                      <div className="merge-opt-desc">当前主题的所有卡片追加到目标主题末尾</div>
+                    </div>
+                  </div>
+
+                  <div className="merge-opt-card" onClick={() => !merging && handleExecuteMerge('start')}>
+                    <div className="merge-opt-icon">⬆️</div>
+                    <div>
+                      <div className="merge-opt-title">移至最前</div>
+                      <div className="merge-opt-desc">当前主题的所有卡片整体置于目标卡片最前面</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '6px' }}>
+                    <button 
+                      className="btn small ghost" 
+                      onClick={() => setMergeStep(1)}
+                      disabled={merging}
+                      style={{ fontSize: '12px' }}
+                    >
+                      ← 返回重选主题
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

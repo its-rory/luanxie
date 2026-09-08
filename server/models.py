@@ -39,3 +39,12 @@ class CapturePatch(BaseModel):
 class TopicReorder(BaseModel):
     topic_ids: list[str]
 
+
+class CaptureReorder(BaseModel):
+    capture_ids: list[str]
+
+
+class TopicMerge(BaseModel):
+    target_topic_id: str
+    position: Literal["time", "end", "start"]
+

@@ -4,7 +4,7 @@ import json
 from fastapi import APIRouter, HTTPException
 
 from .. import db
-from ..models import TopicPatch, CapturePatch, TopicReorder
+from ..models import TopicPatch, CapturePatch, TopicReorder, CaptureReorder, TopicMerge
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
@@ -95,6 +95,15 @@ def delete_topic(topic_id: str):
     return {"ok": True}
 
 
+@router.post("/{topic_id}/merge")
+def merge_topic_route(topic_id: str, payload: TopicMerge):
+    try:
+        merged = db.merge_topics(topic_id, payload.target_topic_id, payload.position)
+        return _with_tags(merged)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 # ---------- sub-card captures endpoints ----------
 
 @router.get("/{topic_id}/captures")
@@ -102,6 +111,14 @@ def get_topic_captures(topic_id: str):
     if not db.get_topic(topic_id):
         raise HTTPException(404, "主题不存在")
     return db.list_captures_by_topic(topic_id)
+
+
+@router.post("/{topic_id}/captures/reorder")
+def reorder_captures_route(topic_id: str, payload: CaptureReorder):
+    if not db.get_topic(topic_id):
+        raise HTTPException(404, "主题不存在")
+    db.reorder_captures(topic_id, payload.capture_ids)
+    return {"ok": True}
 
 
 @router.patch("/captures/{capture_id}")

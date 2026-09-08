@@ -17,6 +17,7 @@ export interface Capture {
   title?: string | null
   is_pinned?: number | boolean
   pinned_at?: string | null
+  sort_order?: number
 }
 
 export interface CaptureVersion {

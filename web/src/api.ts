@@ -61,6 +61,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ topic_ids: topicIds }),
     }),
+  mergeTopic: (topicId: string, targetTopicId: string, position: 'time' | 'end' | 'start') =>
+    req<Topic>(`/api/topics/${topicId}/merge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_topic_id: targetTopicId, position }),
+    }),
 
   topicCaptures: (topicId: string) => req<Capture[]>(`/api/topics/${topicId}/captures`),
   patchCapture: (id: string, body: { clean_text?: string; raw_text?: string; transcript?: string; title?: string }) =>
@@ -76,6 +82,12 @@ export const api = {
     req<{ ok: boolean; topic_deleted: boolean }>(`/api/topics/captures/${id}`, { method: 'DELETE' }),
   togglePinCapture: (id: string) =>
     req<Capture>(`/api/topics/captures/${id}/pin`, { method: 'POST' }),
+  reorderCaptures: (topicId: string, captureIds: string[]) =>
+    req<{ ok: boolean }>(`/api/topics/${topicId}/captures/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ capture_ids: captureIds }),
+    }),
 
   health: () => req<Health>('/api/health'),
   getSettings: () => req<Record<string, string>>('/api/settings'),
