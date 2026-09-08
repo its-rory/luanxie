@@ -227,6 +227,15 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
   const [activeCapVersions, setActiveCapVersions] = useState<Record<string, { versions: CaptureVersion[]; show: boolean }>>({})
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [editCapTitle, setEditCapTitle] = useState('')
+  const [activeMenuCapId, setActiveMenuCapId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handleClickOutside = () => setActiveMenuCapId(null)
+    if (activeMenuCapId) {
+      document.addEventListener('click', handleClickOutside)
+      return () => document.removeEventListener('click', handleClickOutside)
+    }
+  }, [activeMenuCapId])
 
   const load = useCallback((active = { current: true }) => {
     api.topic(id).then(res => { if (active.current) setTopic(res); }).catch(() => {})
@@ -420,6 +429,58 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
     } catch (e) {
       showToast('回滚失败: ' + (e as Error).message)
     }
+  }
+
+  const handleTogglePin = async (capId: string) => {
+    setActiveMenuCapId(null)
+    try {
+      const updated = await api.togglePinCapture(capId)
+      setCaptures((prev) => {
+        const next = prev.map((c) => (c.id === capId ? { ...c, is_pinned: updated.is_pinned, pinned_at: updated.pinned_at } : c))
+        return next.sort((a, b) => {
+          const aPinned = a.is_pinned ? 1 : 0
+          const bPinned = b.is_pinned ? 1 : 0
+          if (aPinned !== bPinned) return bPinned - aPinned
+          if (aPinned && bPinned) {
+            return (b.pinned_at || '').localeCompare(a.pinned_at || '')
+          }
+          return (a.created_at || '').localeCompare(b.created_at || '')
+        })
+      })
+      showToast(updated.is_pinned ? '已置顶该子卡片' : '已取消置顶')
+    } catch (err: any) {
+      showToast(err.message || '操作失败')
+    }
+  }
+
+  const copySubCardMarkdown = (cap: Capture, idx: number) => {
+    const title = cap.title ? cap.title : `子卡片 #${idx + 1}`
+    const typeLabel = cap.type === 'audio' ? '语音' : cap.type === 'image' ? '图片' : '文本'
+    const timeStr = new Date(cap.created_at).toLocaleString('zh-CN', { hour12: false })
+    const clean = (cap.clean_text || '').trim()
+    const raw = (cap.transcript || cap.raw_text || '').trim()
+
+    let md = `### ${title}\n`
+    md += `> 类型: ${typeLabel} | 时间: ${timeStr}\n\n`
+    if (clean) {
+      md += `#### AI解析\n${clean}\n\n`
+    }
+    if (raw) {
+      md += `#### 记录轨迹\n${raw}\n`
+    }
+    navigator.clipboard.writeText(md.trim()).then(() => {
+      showToast('已复制子卡片 Markdown 内容')
+    }).catch(() => {
+      showToast('复制失败，请检查剪贴板权限')
+    })
+  }
+
+  const getWordCount = (cap: Capture) => {
+    const text = [cap.title, cap.clean_text, cap.transcript, cap.raw_text]
+      .filter(Boolean)
+      .join('')
+      .replace(/\s+/g, '')
+    return text.length
   }
 
   if (!topic) return <div className="empty">加载中...</div>
@@ -623,10 +684,13 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
             })
             const typeLabel = cap.type === 'audio' ? '🔊 语音' : cap.type === 'image' ? '🖼️ 图片' : '📝 文本'
 
+            const isPinned = Boolean(cap.is_pinned)
+            const wordCount = getWordCount(cap)
+
             return (
               <div 
                 key={cap.id} 
-                className="sub-card"
+                className={`sub-card ${isPinned ? 'pinned' : ''}`}
               >
                 {/* Sub-card header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '10px' }}>
@@ -635,23 +699,74 @@ export default function TopicDetail({ id, back, openByTitle, showToast }: {
                     <span className="tag" style={{ fontSize: '11px' }}>
                       {typeLabel}
                     </span>
+                    {isPinned && (
+                      <span className="pinned-badge">
+                        📌 置顶
+                      </span>
+                    )}
                   </div>
                   
-                  <div style={{ display: 'flex', gap: '6px' }}>
+                  <div style={{ position: 'relative' }}>
                     {!isEditingCap && (
                       <>
                         <button 
-                          className="action-btn" 
-                          onClick={() => handleStartEditCapture(cap)}
+                          className="card-menu-trigger" 
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setActiveMenuCapId(activeMenuCapId === cap.id ? null : cap.id)
+                          }}
+                          title="更多操作"
+                          aria-label="更多操作"
                         >
-                          编辑
+                          ···
                         </button>
-                        <button 
-                          className="action-btn danger" 
-                          onClick={() => handleDeleteCapture(cap.id)}
-                        >
-                          删除
-                        </button>
+                        {activeMenuCapId === cap.id && (
+                          <div className="card-menu-popover" onClick={(e) => e.stopPropagation()}>
+                            <button 
+                              className="card-menu-item" 
+                              onClick={() => {
+                                setActiveMenuCapId(null)
+                                handleStartEditCapture(cap)
+                              }}
+                            >
+                              <span className="menu-icon">✏️</span>
+                              <span>编辑</span>
+                            </button>
+                            <button 
+                              className="card-menu-item" 
+                              onClick={() => {
+                                setActiveMenuCapId(null)
+                                copySubCardMarkdown(cap, idx)
+                              }}
+                            >
+                              <span className="menu-icon">📋</span>
+                              <span>复制</span>
+                            </button>
+                            <div className="card-menu-divider" />
+                            <button 
+                              className="card-menu-item" 
+                              onClick={() => handleTogglePin(cap.id)}
+                            >
+                              <span className="menu-icon">📌</span>
+                              <span>{isPinned ? '取消置顶' : '置顶'}</span>
+                            </button>
+                            <div className="card-menu-divider" />
+                            <button 
+                              className="card-menu-item danger" 
+                              onClick={() => {
+                                setActiveMenuCapId(null)
+                                handleDeleteCapture(cap.id)
+                              }}
+                            >
+                              <span className="menu-icon">🗑️</span>
+                              <span>删除</span>
+                            </button>
+                            <div className="card-menu-divider" />
+                            <div className="card-menu-footer">
+                              字数统计: {wordCount}
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
                   </div>

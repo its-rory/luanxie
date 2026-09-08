@@ -15,6 +15,8 @@ export interface Capture {
   logs?: LogEntry[]
   version?: number
   title?: string | null
+  is_pinned?: number | boolean
+  pinned_at?: string | null
 }
 
 export interface CaptureVersion {
@@ -47,6 +49,7 @@ export interface Topic {
   tags: string[]
   version: number
   exported_version: number
+  sort_order?: number
   updated_at: string
   created_at: string
 }

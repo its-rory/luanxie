@@ -34,3 +34,8 @@ class CapturePatch(BaseModel):
     raw_text: str | None = Field(None, max_length=50000)
     transcript: str | None = Field(None, max_length=100000)
     title: str | None = Field(None, max_length=200)
+
+
+class TopicReorder(BaseModel):
+    topic_ids: list[str]
+

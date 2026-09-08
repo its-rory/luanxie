@@ -55,9 +55,15 @@ export const api = {
   versions: (id: string) => req<TopicVersion[]>(`/api/topics/${id}/versions`),
   rollback: (id: string, version: number) =>
     req<Topic>(`/api/topics/${id}/rollback/${version}`, { method: 'POST' }),
+  reorderTopics: (topicIds: string[]) =>
+    req<{ ok: boolean }>('/api/topics/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic_ids: topicIds }),
+    }),
 
   topicCaptures: (topicId: string) => req<Capture[]>(`/api/topics/${topicId}/captures`),
-  patchCapture: (id: string, body: { clean_text?: string; raw_text?: string; transcript?: string }) =>
+  patchCapture: (id: string, body: { clean_text?: string; raw_text?: string; transcript?: string; title?: string }) =>
     req<Capture>(`/api/topics/captures/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -68,6 +74,8 @@ export const api = {
     req<Capture>(`/api/topics/captures/${id}/rollback/${version}`, { method: 'POST' }),
   deleteTopicCapture: (id: string) =>
     req<{ ok: boolean; topic_deleted: boolean }>(`/api/topics/captures/${id}`, { method: 'DELETE' }),
+  togglePinCapture: (id: string) =>
+    req<Capture>(`/api/topics/captures/${id}/pin`, { method: 'POST' }),
 
   health: () => req<Health>('/api/health'),
   getSettings: () => req<Record<string, string>>('/api/settings'),

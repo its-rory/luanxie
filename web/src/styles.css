@@ -411,11 +411,160 @@ nav.tabs button .badge {
 
 .topic-card {
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  transition: transform 0.22s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.22s ease, border-color 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-y;
 }
 .topic-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-md); }
 .topic-card .t-title { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
 .topic-card .t-summary { font-size: 13px; line-height: 1.6; color: var(--ink-soft); margin-bottom: 8px; word-break: break-word; }
+
+/* SortableJS 拖拽动画与物理果冻动效 (PC与手机通用) */
+.topic-card.sortable-chosen {
+  transform: scale(1.028) rotate(-0.6deg);
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12), 0 2px 8px rgba(37, 99, 235, 0.08);
+  border-color: #93c5fd;
+  cursor: grabbing;
+  z-index: 50;
+}
+.topic-card.sortable-ghost {
+  opacity: 0.38;
+  background: #eff6ff !important;
+  border: 1.5px dashed #60a5fa !important;
+  box-shadow: none !important;
+  transform: scale(0.985);
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+.topic-card.sortable-drag {
+  opacity: 0.95;
+  cursor: grabbing;
+}
+
+/* ---------- 子卡片样式 ---------- */
+.sub-card {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.sub-card.pinned {
+  border-left: 3.5px solid var(--cinnabar);
+  background: linear-gradient(180deg, #fbfdff 0%, var(--paper-card) 100%);
+}
+.pinned-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  background: var(--seal-bg);
+  color: var(--cinnabar);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+
+/* 子卡片右上角三点菜单及浮层 */
+.card-menu-trigger {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 18px;
+  font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.card-menu-trigger:hover, .card-menu-trigger:active {
+  background: var(--paper-deep);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.card-menu-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  width: 140px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.04);
+  padding: 6px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  animation: menuFadeIn 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+}
+@keyframes menuFadeIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.card-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  font-size: 13px;
+  font-family: var(--sans);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.card-menu-item:hover, .card-menu-item:active {
+  background: var(--paper-deep);
+}
+.card-menu-item.danger {
+  color: var(--danger);
+}
+.card-menu-item.danger:hover, .card-menu-item.danger:active {
+  background: #fef2f2;
+  color: var(--danger-deep);
+}
+.card-menu-item .menu-icon {
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+}
+
+.card-menu-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 4px;
+}
+
+.card-menu-footer {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  text-align: left;
+  user-select: none;
+}
+
 
 .detail-head {
   margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line);

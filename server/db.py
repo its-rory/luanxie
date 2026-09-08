@@ -21,7 +21,11 @@ CREATE TABLE IF NOT EXISTS captures (
   error         TEXT,
   retry_count   INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL,
-  processed_at  TEXT
+  processed_at  TEXT,
+  version       INTEGER NOT NULL DEFAULT 0,
+  title         TEXT,
+  is_pinned     INTEGER NOT NULL DEFAULT 0,
+  pinned_at     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS topics (
@@ -34,7 +38,8 @@ CREATE TABLE IF NOT EXISTS topics (
   exported_version INTEGER NOT NULL DEFAULT 0,
   export_filename  TEXT,
   created_at       TEXT NOT NULL,
-  updated_at       TEXT NOT NULL
+  updated_at       TEXT NOT NULL,
+  sort_order       INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS topic_versions (
@@ -63,6 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_captures_status ON captures(status);
 CREATE INDEX IF NOT EXISTS idx_captures_created ON captures(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_captures_topic ON captures(topic_id);
 CREATE INDEX IF NOT EXISTS idx_topics_updated ON topics(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_topics_sort ON topics(sort_order ASC, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
@@ -129,6 +135,23 @@ def get_conn() -> sqlite3.Connection:
                 # Migration: add title to capture_versions if it doesn't exist (for existing tables)
                 try:
                     conn.execute("ALTER TABLE capture_versions ADD COLUMN title TEXT")
+                    conn.commit()
+                except sqlite3.OperationalError:
+                    pass
+                # Migration: add is_pinned and pinned_at to captures
+                try:
+                    conn.execute("ALTER TABLE captures ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
+                    conn.commit()
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE captures ADD COLUMN pinned_at TEXT")
+                    conn.commit()
+                except sqlite3.OperationalError:
+                    pass
+                # Migration: add sort_order to topics
+                try:
+                    conn.execute("ALTER TABLE topics ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
                     conn.commit()
                 except sqlite3.OperationalError:
                     pass
@@ -203,7 +226,7 @@ def update_capture(capture_id: str, **fields) -> None:
     allowed = {
         "type", "status", "raw_text", "media_path", "transcript", "clean_text",
         "topic_id", "confidence", "suggestion", "error", "retry_count", "created_at",
-        "processed_at", "title"
+        "processed_at", "title", "is_pinned", "pinned_at"
     }
     for k in fields:
         if k not in allowed:
@@ -253,10 +276,14 @@ def create_topic(title: str, summary: str = "") -> dict:
     conn = get_conn()
     tid = uuid.uuid4().hex[:12]
     ts = now()
+    cur = conn.execute("SELECT MIN(sort_order) FROM topics")
+    row = cur.fetchone()
+    min_order = row[0] if row and row[0] is not None else 0
+    new_order = min_order - 1
     try:
         conn.execute(
-            "INSERT INTO topics (id, title, summary, created_at, updated_at)"
-            " VALUES (?,?,?,?,?)", (tid, title, summary, ts, ts))
+            "INSERT INTO topics (id, title, summary, sort_order, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?)", (tid, title, summary, new_order, ts, ts))
         conn.execute(
             "INSERT INTO topics_fts (topic_id, title, summary, tags) VALUES (?,?,?,?)",
             (tid, title, summary, "[]"))
@@ -292,20 +319,20 @@ def list_topics(q: str | None = None, limit: int = 50, offset: int = 0) -> list[
         try:
             cur = conn.execute(
                 "SELECT t.* FROM topics t JOIN topics_fts f ON t.id=f.topic_id"
-                " WHERE topics_fts MATCH ? ORDER BY t.updated_at DESC LIMIT ? OFFSET ?", (q, limit, offset))
+                " WHERE topics_fts MATCH ? ORDER BY t.sort_order ASC, t.updated_at DESC LIMIT ? OFFSET ?", (q, limit, offset))
             return _rows(cur)
         except sqlite3.OperationalError:
             like_query = f"%{q}%"
             cur = conn.execute(
-                "SELECT id, title, summary, tags, version, exported_version,"
+                "SELECT id, title, summary, tags, version, exported_version, sort_order,"
                 " created_at, updated_at FROM topics"
-                " WHERE title LIKE ? OR summary LIKE ? ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+                " WHERE title LIKE ? OR summary LIKE ? ORDER BY sort_order ASC, updated_at DESC LIMIT ? OFFSET ?",
                 (like_query, like_query, limit, offset))
             return _rows(cur)
     else:
         cur = conn.execute(
-            "SELECT id, title, summary, tags, version, exported_version,"
-            " created_at, updated_at FROM topics ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            "SELECT id, title, summary, tags, version, exported_version, sort_order,"
+            " created_at, updated_at FROM topics ORDER BY sort_order ASC, updated_at DESC LIMIT ? OFFSET ?",
             (limit, offset))
         return _rows(cur)
 
@@ -538,9 +565,31 @@ def delete_session(token: str) -> None:
 
 def list_captures_by_topic(topic_id: str) -> list[dict]:
     cur = get_conn().execute(
-        "SELECT * FROM captures WHERE topic_id=? ORDER BY created_at ASC", (topic_id,)
+        "SELECT * FROM captures WHERE topic_id=? ORDER BY is_pinned DESC, pinned_at DESC, created_at ASC", (topic_id,)
     )
     return _rows(cur)
+
+
+def toggle_capture_pin(capture_id: str) -> dict:
+    conn = get_conn()
+    cap = get_capture(capture_id)
+    if not cap:
+        raise ValueError(f"Capture with id '{capture_id}' not found")
+    new_is_pinned = 0 if cap.get("is_pinned") else 1
+    pinned_at = now() if new_is_pinned else None
+    with conn:
+        conn.execute(
+            "UPDATE captures SET is_pinned=?, pinned_at=? WHERE id=?",
+            (new_is_pinned, pinned_at, capture_id)
+        )
+    return get_capture(capture_id)
+
+
+def reorder_topics(topic_ids: list[str]) -> None:
+    conn = get_conn()
+    with conn:
+        for idx, tid in enumerate(topic_ids):
+            conn.execute("UPDATE topics SET sort_order=? WHERE id=?", (idx, tid))
 
 
 def update_topic_summary(topic_id: str, summary: str) -> None:

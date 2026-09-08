@@ -4,7 +4,7 @@ import json
 from fastapi import APIRouter, HTTPException
 
 from .. import db
-from ..models import TopicPatch, CapturePatch
+from ..models import TopicPatch, CapturePatch, TopicReorder
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
@@ -22,6 +22,12 @@ def list_topics(q: str | None = None, title: str | None = None, limit: int = 50,
             return [_with_tags(topic)]
         return []
     return [_with_tags(t) for t in db.list_topics(q, limit=limit, offset=offset)]
+
+
+@router.post("/reorder")
+def reorder_topics_route(payload: TopicReorder):
+    db.reorder_topics(payload.topic_ids)
+    return {"ok": True}
 
 
 @router.get("/{topic_id}")
@@ -119,6 +125,14 @@ def patch_capture(capture_id: str, patch: CapturePatch):
         if caps and caps[-1]["id"] == capture_id and (updated["clean_text"] or "").strip():
             db.update_topic_summary(topic_id, updated["clean_text"][:100])
     return updated
+
+
+@router.post("/captures/{capture_id}/pin")
+def toggle_capture_pin_route(capture_id: str):
+    cap = db.get_capture(capture_id)
+    if not cap:
+        raise HTTPException(404, "子卡片不存在")
+    return db.toggle_capture_pin(capture_id)
 
 
 @router.get("/captures/{capture_id}/versions")
