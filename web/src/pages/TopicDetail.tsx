@@ -423,17 +423,24 @@ export default function TopicDetail({ id, back, openTopic, openByTitle, showToas
     }
 
     subCardSortableRef.current = Sortable.create(reorderContainerRef.current, {
-      animation: 260,
+      animation: 200,
       easing: 'cubic-bezier(0.2, 0, 0, 1)',
-      delay: 350,
+      delay: 0,
       delayOnTouchOnly: false,
-      touchStartThreshold: 5,
+      touchStartThreshold: 3,
       handle: '.drag-handle',
       chosenClass: 'sortable-chosen',
       ghostClass: 'sortable-ghost',
       dragClass: 'sortable-drag',
+      fallbackClass: 'sortable-fallback',
       draggable: '.sub-card-collapsed',
-      forceFallback: false,
+      forceFallback: true,
+      fallbackOnBody: true,
+      fallbackTolerance: 3,
+      scroll: true,
+      scrollSensitivity: 80,
+      scrollSpeed: 15,
+      bubbleScroll: true,
       onStart: () => {
         isDraggingCapRef.current = true
         if ('vibrate' in navigator) {

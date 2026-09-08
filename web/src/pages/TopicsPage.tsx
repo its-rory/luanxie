@@ -49,16 +49,23 @@ export default function TopicsPage({ tick, openTopic }: {
     }
 
     sortableRef.current = Sortable.create(listRef.current, {
-      animation: 260,
+      animation: 200,
       easing: 'cubic-bezier(0.2, 0, 0, 1)',
-      delay: 350,
-      delayOnTouchOnly: false,
+      delay: 300,
+      delayOnTouchOnly: true,
       touchStartThreshold: 5,
       chosenClass: 'sortable-chosen',
       ghostClass: 'sortable-ghost',
       dragClass: 'sortable-drag',
+      fallbackClass: 'sortable-fallback',
       draggable: '.topic-card',
-      forceFallback: false,
+      forceFallback: true,
+      fallbackOnBody: true,
+      fallbackTolerance: 4,
+      scroll: true,
+      scrollSensitivity: 80,
+      scrollSpeed: 15,
+      bubbleScroll: true,
       onStart: () => {
         isDraggingRef.current = true
         if ('vibrate' in navigator) {

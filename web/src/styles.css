@@ -411,35 +411,44 @@ nav.tabs button .badge {
 
 .topic-card {
   cursor: pointer;
-  transition: transform 0.22s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.22s ease, border-color 0.15s ease;
+  transition: box-shadow 0.2s ease, border-color 0.15s ease;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
   touch-action: pan-y;
 }
 .topic-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-md); }
 .topic-card .t-title { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
 .topic-card .t-summary { font-size: 13px; line-height: 1.6; color: var(--ink-soft); margin-bottom: 8px; word-break: break-word; }
 
-/* SortableJS 拖拽动画与物理果冻动效 (PC与手机通用) */
+/* SortableJS 拖拽动画与定位 (PC与手机通用，禁用 transition 杜绝 iOS Safari 抖动) */
+.sortable-fallback,
+.sortable-drag {
+  transition: none !important;
+  -webkit-transition: none !important;
+  animation: none !important;
+  pointer-events: none !important;
+  z-index: 999999 !important;
+  box-sizing: border-box !important;
+}
 .topic-card.sortable-chosen {
-  transform: scale(1.028) rotate(-0.6deg);
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12), 0 2px 8px rgba(37, 99, 235, 0.08);
   border-color: #93c5fd;
   cursor: grabbing;
-  z-index: 50;
 }
 .topic-card.sortable-ghost {
-  opacity: 0.38;
+  opacity: 0.35 !important;
   background: #eff6ff !important;
   border: 1.5px dashed #60a5fa !important;
   box-shadow: none !important;
-  transform: scale(0.985);
-  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
+.topic-card.sortable-fallback,
 .topic-card.sortable-drag {
-  opacity: 0.95;
-  cursor: grabbing;
+  opacity: 0.98 !important;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2), 0 4px 12px rgba(37, 99, 235, 0.12) !important;
+  border: 1.5px solid #60a5fa !important;
+  border-radius: 12px !important;
+  background: #ffffff !important;
+  cursor: grabbing !important;
 }
 
 /* ---------- 子卡片样式 ---------- */
@@ -645,10 +654,11 @@ nav.tabs button .badge {
   justify-content: space-between;
   gap: 10px;
   box-shadow: var(--shadow-xs);
-  transition: transform 0.22s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.22s ease, border-color 0.15s ease;
+  transition: box-shadow 0.2s ease, border-color 0.15s ease;
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
   touch-action: pan-y;
 }
 .sub-card-collapsed.pinned {
@@ -659,24 +669,23 @@ nav.tabs button .badge {
   box-shadow: var(--shadow-sm);
 }
 .sub-card-collapsed.sortable-chosen {
-  transform: scale(1.025) rotate(-0.5deg);
-  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
   border-color: #93c5fd;
-  z-index: 50;
   cursor: grabbing;
 }
 .sub-card-collapsed.sortable-ghost {
-  opacity: 0.38;
+  opacity: 0.35 !important;
   background: #eff6ff !important;
   border: 1.5px dashed #60a5fa !important;
   box-shadow: none !important;
-  transform: scale(0.985);
-  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
+.sub-card-collapsed.sortable-fallback,
 .sub-card-collapsed.sortable-drag {
-  opacity: 0.95;
-  cursor: grabbing;
+  opacity: 0.98 !important;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.2) !important;
+  border: 1.5px solid #60a5fa !important;
+  border-radius: 8px !important;
+  background: #ffffff !important;
+  cursor: grabbing !important;
 }
 .sub-card-collapsed .collapsed-title {
   font-size: 14px;
@@ -703,6 +712,10 @@ nav.tabs button .badge {
   border-radius: 6px;
   flex-shrink: 0;
   transition: background 0.15s ease, color 0.15s ease;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .sub-card-collapsed .drag-handle:hover {
   background: var(--paper-deep);
